@@ -47,6 +47,9 @@
 
 
 __version__ = '0.971' # Format specified in Python PEP 396
+
+from functools import reduce
+
 Version = 'finitefield.py, version ' + __version__ + ', 23 Sept, 2018, by Robert Campbell, <r.campbel.256@gmail.com>'
 
 import numbthy  # Use factor
