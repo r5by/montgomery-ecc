@@ -22,14 +22,14 @@ from numbthy import *
 class ECDSA(object):
     """ECDSA Signatures
 	Usage:
-	        >>> from ellipticcurve import *
-		>>> from ellipticcurve import *
+	        >>> from src.ellipticcurve import *
+		>>> from src.ellipticcurve import *
 		>>> theECDSA = ECDSA(256,d=0xDEADBEEF)  # d = 0xDEADBEEF private key
 		      Q = d*G = [0xB487...8394, 0x2A12...CE5E]
 		>>> themsg = "Blah, blah"
 		>>> [r,s] = theECDSA.sign(themsg,k=0xF00F00D00F)  # Explicit signing nonce k
 		      (r,s) = [0xFF99...4ECB1, 0xDA3F...FB81]
-		>>> theECDSA.verify(themsg,[r,s])
+		>>> theECDSA.is_point_on_curve(themsg,[r,s])
 	"""
 
     def __init__(self, curve=384, d=None, verbose=True):  # Generate signing key

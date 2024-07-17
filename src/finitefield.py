@@ -13,7 +13,7 @@
 	Functions implemented are:
 		+, *, /, **, norm, trace, gen, random, enumerate
 	Simple Examples:
-	    >>> from finitefield import *     # names do not need path
+	    >>> from src.finitefield import *     # names do not need path
 	    >>> GF81 = GF(3**4)               # create finite field
 	    >>> a = GF81([0,1])               # create element [0,1] = (0 + 1*x) = x
 	    >>> '{0:l}^10 has value {1:l}'.format(a,a**10) # format as coeff list
@@ -23,7 +23,7 @@
 	    >>> GF13 = GF(13); GF13(10)+GF13(10) # Compute mod 13
 
 	Examples:
-	    >>> from finitefield import *     # names do not need path
+	    >>> from src.finitefield import *     # names do not need path
 	    >>> GF9 = FiniteField(3,[2,1])    # Define GF(3^2), polys w/ GF3 coeffs, mod 2+x+x^2 (x^2 is assumed)
 	    >>> a = FiniteFieldElt(GF9,[1,2]) # Define 1+2x in GF(9)
 	    >>> a**12                         # Compute (2x+1)**12 in GF(9)
@@ -61,7 +61,7 @@ class FiniteField(object):
 	"""Finite fields of prime power order.
 	Driving polynomial must be monic and top coeff (i.e. 1) is implicit.
 	Usage: 
-	    >>> from finitefield import *
+	    >>> from src.finitefield import *
 	    >>> GF9 = FiniteField(3,[2,1])    # Define GF(3^2), polys w/ GF3 coeffs, mod x^2+x+2
 	    >>> a = FiniteFieldElt(GF9,[1,2]) # Define 2x+1 in GF(9)
 	    >>> a**12                         # Compute (2x+1)**12 in GF(9)"""
@@ -71,7 +71,7 @@ class FiniteField(object):
 		Create a finite field of order p**d, where d is the degree of the polynomial.
 		Driving polynomial must be monic and top coeff (i.e. 1) is implicit.
 		Example: 
-		    >>> from finitefield import *
+		    >>> from src.finitefield import *
 		    >>> GF9 = FiniteField(3,[2,1])    # Define GF(3^2), polys w/ GF3 coeffs, mod x^2+x+2
 		    >>> a = FiniteFieldElt(GF9,[1,2]) # Define 2x+1 in GF(9)
 		  Define GF(5^8), defined mod z^8+3z^5+z^4+z^2+3z+4
@@ -223,7 +223,7 @@ class FiniteFieldElt(object):
 	"""An element of a prime power order finite fields"
 	Driving polynomial must be monic and top coeff (i.e. 1) is implicit.
 	Usage:
-	    >>> from finitefield import *
+	    >>> from src.finitefield import *
 	    >>> GF9 = FiniteField(3,[2,1])    # Define GF(3^2), polys w/ GF3 coeffs, mod x^2+x+2
 	    >>> a = FiniteFieldElt(GF9,[1,2]) # Define 2x+1 in GF(9)
 	    >>> a**12                         # Compute (2x+1)**12 in GF(9)"""
@@ -520,7 +520,7 @@ def GF(n, poly=[], var='x', fmtspec="p"):
 		p = nfactors[0][0]; e = nfactors[0][1]  # Prime p, exponent e
 		if (len(poly) == 0):
 			try:
-				poly = readconway('CPimport.txt',p,e)[:-1] # Assume monic
+				poly = readconway('../CPimport.txt', p, e)[:-1] # Assume monic
 			except(IOError,ValueError):
 				print("      Look for non-Conway primitive polynomial")
 				poly = findprimpoly(p,e)

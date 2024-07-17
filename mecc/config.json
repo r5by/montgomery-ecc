@@ -1,0 +1,6 @@
+{
+    "COMP_TYPE": "ter",
+    "DEFAULT_MUL_OPT": "real0",
+    "DEFAULT_EXP_OPT": "bin",
+    "TOTAL_CORES": 4
+}
