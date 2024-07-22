@@ -31,6 +31,14 @@ class JacobianCoord:
         self.Y = y
         self.Z = z
 
+    def __neg__(self):
+        """Return the additive inverse of the point."""
+        if self.is_point_at_infinity():
+            return self
+
+        neg_y = self.domain(-self.Y) if isinstance(self.Y, int) else -self.Y
+        return JacobianCoord(self.X, neg_y, self.Z, self.domain)
+
     def get_integer_coords(self) -> Tuple[int, int, int]:
         return int(self.X), int(self.Y), int(self.Z)
 
@@ -63,9 +71,13 @@ class JacobianCoord:
     def is_point_at_infinity(self):
         return self.Z == 0
 
+    def is_affine(self):
+        return self.Z == 1
+
     @classmethod
     def point_at_infinity(cls, domain: GFType):
-        return cls.from_int_coord(0, 1, 0, domain)
+        # Note (1: 1: 0) for jacobian and (0: 1: 0) for projective, note the difference.
+        return cls.from_int_coord(1, 1, 0, domain)
 
     @classmethod
     def from_affine(cls, point: Union[List[int], PointAtInfinity], domain: GFType) -> 'JacobianCoord':
@@ -86,8 +98,8 @@ class JacobianCoord:
         return cls.from_int_coord(x, y, 1, domain)  # Z=1 for affine coordinates
 
     @classmethod
-    def from_domain_coord(cls, x: GFElementType, y: GFElementType, z: GFElementType) -> 'JacobianCoord':
-        return cls(x, y, z)
+    def copy(cls, x: GFElementType, y: GFElementType, z: GFElementType, domain: GFType) -> 'JacobianCoord':
+        return JacobianCoord(x, y, z, domain)
 
     @classmethod
     def from_int_coord(cls, x: int, y: int, z: int, domain: GFType) -> 'JacobianCoord':
@@ -95,18 +107,34 @@ class JacobianCoord:
         p.enter_domain(domain)
         return p
 
-    def to_affine(self) -> Union[Tuple[int, int], PointAtInfinity]:
-
-        X, Y, Z = self.X, self.Y, self.Z
+    def get_affine_coords(self) -> Union[Tuple[int, int], PointAtInfinity]:
         if self.is_point_at_infinity():
             return PointAtInfinity()
 
-        # todo> apply xgcd?
-        Z2 = Z * Z
-        Z3 = Z2 * Z
-        _Z2 = 1 / Z2
-        _Z3 = 1 / Z3
+        if not self.is_affine():
+            # todo> apply xgcd?
+            self._to_affine()
+
+        return int(self.X), int(self.Y)
+
+    def to_affine(self):
+
+        if self.is_point_at_infinity() or self.is_affine():
+            return
+
+        self._to_affine()
+
+    def _to_affine(self):
+        ''' Internal: project this point onto affine plane '''
+        # Cost: 1I(inverse) + 1S(square) + 3M(multiplication)
+        X, Y, Z = self.X, self.Y, self.Z
+        _Z = 1 / Z
+        _Z2 = _Z * _Z
+        _Z3 = _Z * _Z2
 
         x = X * _Z2
         y = Y * _Z3
-        return int(x), int(y)
+
+        self.X = x
+        self.Y = y
+        self.Z = self.domain(1)

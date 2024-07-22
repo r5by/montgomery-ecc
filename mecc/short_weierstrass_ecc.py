@@ -4,10 +4,12 @@ from mecc.interface import EllipticCurve
 from typing import Union, List
 from mecc.coordinate import JacobianCoord, PointAtInfinity
 from mont.typing import GFType
+from mecc.utils import naf_prodinger, int_by_slider, msb, turn_off_msb
+import math
 
-
-const_scala = lambda c, x: sum([x for _ in range(c)])  # c*x for c as a constant
-double = lambda x: x + x
+# Quick field elements operations (following OpenSSL's naming convention)
+fe_const_scala = lambda c, x: sum([x for _ in range(c)])  # c*x for c as a constant
+fe_double = lambda x: x + x
 
 
 class ShortWeierstrassCurve(EllipticCurve, ABC):
@@ -111,7 +113,8 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         '''
         P1 = JacobianCoord.from_affine(p1, domain=self.domain)
         P2 = JacobianCoord.from_affine(p2, domain=self.domain)
-        return self.add_points(P1, P2).to_affine()
+        R = self.add_points(P1, P2)
+        return R.get_affine_coords()
 
     def add_points(self, p1: JacobianCoord, p2: JacobianCoord) -> JacobianCoord:
         '''
@@ -157,23 +160,23 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         S1 = Y1 * Z2 * Z2Z2  # 4M
         S2 = Y2 * Z1 * Z1Z1  # 6M
         H = U2 - U1
-        I = double(H) ** 2  # 1*2, 3S
+        I = fe_double(H) ** 2  # 1*2, 3S
         J = H * I  # 7M
-        r = double(S2 - S1)  # 2*2
+        r = fe_double(S2 - S1)  # 2*2
         V = U1 * I  # 8M
 
-        X3 = r ** 2 - J - double(V)  # 4S, 3*2
-        Y3 = r * (V - X3) - double(S1 * J)  # 10M, 4*2
+        X3 = r ** 2 - J - fe_double(V)  # 4S, 3*2
+        Y3 = r * (V - X3) - fe_double(S1 * J)  # 10M, 4*2
         Z3 = ((Z1 + Z2) ** 2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
 
-        return JacobianCoord.from_domain_coord(X3, Y3, Z3)
+        return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 
     def double_point_affine(self, p: Union[List[int], PointAtInfinity]) -> Union[List[int], PointAtInfinity]:
         if isinstance(p, PointAtInfinity):
             return p
 
         P = JacobianCoord.from_affine(p, domain=self.domain)
-        return self.double_point(P).to_affine()
+        return self.double_point(P).get_affine_coords()
 
     def double_point(self, p: JacobianCoord) -> JacobianCoord:
         '''
@@ -185,33 +188,112 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             return JacobianCoord.point_at_infinity(self.domain)
 
         # S = self.domain(4) * X * Y ** 2
-        S = const_scala(4, X * Y ** 2)
+        S = fe_const_scala(4, X * Y ** 2)
         # M = self.domain(3) * X ** 2 + self._a * Z ** 4
-        M = const_scala(3, X ** 2) + self._a * Z ** 4
+        M = fe_const_scala(3, X ** 2) + self._a * Z ** 4
 
         # X_ = M ** 2 - self.domain(2) * S
-        X_ = M ** 2 - double(S)
+        X_ = M ** 2 - fe_double(S)
         # Y_ = M * (S - X_) - self.domain(8) * Y ** 4
-        Y_ = M * (S - X_) - const_scala(8, Y ** 4)
+        Y_ = M * (S - X_) - fe_const_scala(8, Y ** 4)
         # Z_ = self.domain(2) * Y * Z
-        Z_ = double(Y * Z)
+        Z_ = fe_double(Y * Z)
 
-        return JacobianCoord.from_domain_coord(X_, Y_, Z_)
+        return JacobianCoord.copy(X_, Y_, Z_, self.domain)
 
     def k_point_affine(self, k, p):
         pass
 
-    # todo> NAF for unfixed, COMB for fixed (P is known and pre-calculated)
-    def k_point(self, k, p):
-        # Naive implementation of scalar multiplication
-        result = (None, None)
-        addend = p
-        while k:
-            if k & 1:
-                if result == (None, None):
-                    result = addend
-                else:
-                    result = self.add_points(result, addend)
-            addend = self.double_point(addend)
-            k >>= 1
-        return result
+    def k_point(self, k: int, P: JacobianCoord) -> JacobianCoord:
+        ''' ECSM (elliptic curve scalar multiplication) of k*P for P is unfixed point
+                use NAF(prodinger) to minimize the point add/sub operations
+         '''
+
+        if k == 0 or P.is_point_at_infinity():
+            return JacobianCoord.point_at_infinity(self.domain)
+
+        if k == 1:
+            return P
+
+        np, nm = naf_prodinger(k)
+
+        # Project point p onto affine to safe the loop cost on addition and subtraction
+        P.to_affine()
+        Q = JacobianCoord.point_at_infinity(self.domain)
+
+        # Determine maximum bit length of np or nm to determine loop range
+        max_bit_length = max(np.bit_length(), nm.bit_length())
+
+        for i in range(max_bit_length - 1, -1, -1):
+            Q = self.double_point(Q)
+            if (np >> i) & 1:
+                Q = self.add_points(P, Q)
+            if (nm >> i) & 1:
+                Q = self.add_points(-P, Q)
+
+        return Q
+
+    def _precompute(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
+        INF = JacobianCoord.point_at_infinity(self.domain)
+        res = [INF for _ in range(1 << w)]
+
+        # step 1) calculate power_dp[i] saves 2^(id) * P for i in [0 .. w-1]
+        power_dp = [P]
+        for _ in range(1, w):
+            nex_point = self.k_point(1 << d, power_dp[-1])
+            power_dp.append(nex_point)
+
+        # [_.to_affine() for _ in power_dp]  # debug usage
+
+        # step 2) populate the precomputations
+        for i in range(1, 1 << w):
+            j, k = msb(i), turn_off_msb(i)
+            tmp = self.add_points(res[k], power_dp[j])
+            tmp.to_affine()
+            res[i] = tmp
+
+        return res
+
+    def k_point_fixed(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+        # print(f'Starting scalar mul for k(={k})*P(={P})')
+
+        # Prepare to perform the multiplication
+        Q = JacobianCoord.point_at_infinity(self.domain)
+
+        t = k.bit_length()
+        d = math.ceil(t / w)
+        precomputed = self._precompute(w, d, P)
+
+        for i in range(d - 1, -1, -1):
+            Q = self.double_point(Q)
+            ki = int_by_slider(k, d, i)
+            Q = self.add_points(Q, precomputed[ki])
+
+        return Q
+
+    # def k_point_fixed_naf(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+    #     # todo> can we save half of the precomputation here?
+    #
+    #
+    #
+    #     # Prepare to perform the multiplication
+    #     Q = JacobianCoord.point_at_infinity(self.domain)
+    #
+    #     t = k.bit_length()
+    #     d = math.ceil(t / w)
+    #     precomputed = _precompute(w, d, P)
+    #     kp, kn = naf_prodinger(k)
+    #
+    #     for i in range(d - 1, -1, -1):
+    #         Q = self.double_point(Q)
+    #         # ki = int_by_slider(k, d, i)
+    #         kpi = int_by_slider(kp, d, i)
+    #         kni = int_by_slider(kn, d, i)
+    #         ki = kpi - kni
+    #
+    #         if ki > 0:
+    #             Q = self.add_points(Q, precomputed[ki])
+    #         else:
+    #             Q = self.add_points(Q, -precomputed[-ki])
+    #
+    #     return Q

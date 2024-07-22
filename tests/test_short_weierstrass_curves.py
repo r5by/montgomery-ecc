@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import unittest
 import random
@@ -10,7 +11,15 @@ from modp import GFmodp
 from mecc.coordinate import PointAtInfinity, JacobianCoord
 from nist_curves import F_256, SAGE_F256, p256, SAGE_p256, G256, SAGE_G256, G256_affine
 
+import hypothesis.strategies as st
+from hypothesis import given, assume, settings, example
+
 USE_MONT = False  # montgomery domain is very slow, use it in caution
+SLOW_SETTINGS = {}
+if "--fast" in sys.argv:  # pragma: no cover
+    SLOW_SETTINGS["max_examples"] = 2
+else:
+    SLOW_SETTINGS["max_examples"] = 10
 
 
 class TestShortWeierstrassCurve(unittest.TestCase):
@@ -118,7 +127,7 @@ class TestShortWeierstrassCurve(unittest.TestCase):
             act = self.curve.double_point_affine(p)
             self.assertEqual(exp, act)
 
-            print(f'done: {cnt + 1}/{total}%')
+            # print(f'done: {cnt + 1}/{total}%')
             cnt += 1
 
     @profiler(1, enabled=USE_MONT)
@@ -133,7 +142,7 @@ class TestShortWeierstrassCurve(unittest.TestCase):
             act = self.curve.add_points_affine(P, Q)
             self.assertEqual(exp, act)
 
-            print(f'done: {cnt + 1}/{total}%')
+            # print(f'done: {cnt + 1}/{total}%')
             cnt += 1
 
     def test_nist_single_double(self):
@@ -153,7 +162,8 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         exp = 2 * zero_point_sage
         exp = (int(exp[0]), int(exp[1]), int(exp[2]))
 
-        self.assertEqual(act, exp)
+        self.assertTrue(exp == (0, 1, 0))  # Inf for projective
+        self.assertTrue(act == (1, 1, 0))  # Inf for jacobian
 
         # test zero-equivalent
         zero_point_ = JacobianCoord.from_int_coord(0, F_256.modulus, 1, F_256)
@@ -162,7 +172,41 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         exp = 2 * zero_point_sage_
         exp = (int(exp[0]), int(exp[1]), int(exp[2]))
 
-        self.assertEqual(act, exp)
+        self.assertTrue(exp == (0, 1, 0))  # Inf for projective
+        self.assertTrue(act == (1, 1, 0))  # Inf for jacobian
+
+    @settings(**SLOW_SETTINGS)
+    @given(
+        st.integers(  # min_value is set above 0, simply get rid of k=0 and kP->Inf,
+            # where for sage(projective): Inf = [0:1:0] !=
+            # jacobian Inf = [1:1:0]
+            min_value=1, max_value=int(F_256.modulus - 1)
+        )
+    )
+    def test_nist_salar_mul_unfixed(self, k):
+        exp = k * SAGE_G256
+        exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+
+        act = p256.k_point(k, G256)
+        act.to_affine()
+        act = act.get_integer_coords()
+        # print(f'success: k={k}')
+
+        self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+
+    def test_nist_salar_mul_fixed(self):
+
+        for i in range(30):
+            k = random.randint(2, 65537)
+            exp = k * SAGE_G256
+            exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+
+            act = p256.k_point_fixed(k, w=3, P=G256)
+            act.to_affine()
+            act = act.get_integer_coords()
+
+            # print(f'{i}-th test success: k={k}')
+            self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
 
 
 if __name__ == "__main__":
