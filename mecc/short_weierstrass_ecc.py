@@ -4,6 +4,7 @@ from mecc.interface import EllipticCurve
 from typing import Union, List
 from mecc.coordinate import JacobianCoord, PointAtInfinity
 from mont.typing import GFType
+from mont.common import ith_word
 from mecc.utils import naf_prodinger, int_by_slider, msb, turn_off_msb
 import math
 
@@ -21,6 +22,8 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             (not used)
             Y^2Z = X^3 + aXZ^2 + bZ^3 (projective)
         where a, b are coefficients in the domain
+        References:
+        [1] Guide to elliptic curve cryptography
     """
 
     def __init__(self, domain: GFType, *coeffs: Union[List[int], int, None], validate=False, **kwargs):
@@ -127,6 +130,9 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         if p2.is_point_at_infinity():
             return p1
 
+        if p1 == p2:  # !! Important !!
+            return self.double_point(p1)
+
         X1, Y1, Z1 = p1.X, p1.Y, p1.Z
         X2, Y2, Z2 = p2.X, p2.Y, p2.Z
 
@@ -159,7 +165,8 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         U2 = X2 * Z1Z1  # 2M
         S1 = Y1 * Z2 * Z2Z2  # 4M
         S2 = Y2 * Z1 * Z1Z1  # 6M
-        H = U2 - U1
+        H = U2 - U1  # IMPORTANT NOTE: This add_point formula can't be use for adding two same point (doubling),
+        # as H will be Zero that cause incorrect result!!
         I = fe_double(H) ** 2  # 1*2, 3S
         J = H * I  # 7M
         r = fe_double(S2 - S1)  # 2*2
@@ -233,9 +240,11 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
 
         return Q
 
-    def _precompute(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
+    def _precompute_comb(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
+        ''' Precompute all combinations of w-bits repr of k with radix 2^d multiply the point P '''
+        # NOTE: This precomputation depends on input (t) to generate (d) from (w), even though w is known!
         INF = JacobianCoord.point_at_infinity(self.domain)
-        res = [INF for _ in range(1 << w)]
+        res = [INF for _ in range(1 << w)]  # len(Lut) = 2^w (can optimized the first two elements [INF, P] out)
 
         # step 1) calculate power_dp[i] saves 2^(id) * P for i in [0 .. w-1]
         power_dp = [P]
@@ -255,14 +264,19 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         return res
 
     def k_point_fixed(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+        ''' Default fixed-point scalar multiplication using the Comb method
+            ref [1] Algorithm 3.44
+        '''
         # print(f'Starting scalar mul for k(={k})*P(={P})')
+        if k == 0:
+            return JacobianCoord.point_at_infinity(self.domain)
 
         # Prepare to perform the multiplication
         Q = JacobianCoord.point_at_infinity(self.domain)
 
         t = k.bit_length()
         d = math.ceil(t / w)
-        precomputed = self._precompute(w, d, P)
+        precomputed = self._precompute_comb(w, d, P)
 
         for i in range(d - 1, -1, -1):
             Q = self.double_point(Q)
@@ -271,29 +285,57 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
 
         return Q
 
-    # def k_point_fixed_naf(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
-    #     # todo> can we save half of the precomputation here?
-    #
-    #
-    #
-    #     # Prepare to perform the multiplication
-    #     Q = JacobianCoord.point_at_infinity(self.domain)
-    #
-    #     t = k.bit_length()
-    #     d = math.ceil(t / w)
-    #     precomputed = _precompute(w, d, P)
-    #     kp, kn = naf_prodinger(k)
-    #
-    #     for i in range(d - 1, -1, -1):
-    #         Q = self.double_point(Q)
-    #         # ki = int_by_slider(k, d, i)
-    #         kpi = int_by_slider(kp, d, i)
-    #         kni = int_by_slider(kn, d, i)
-    #         ki = kpi - kni
-    #
-    #         if ki > 0:
-    #             Q = self.add_points(Q, precomputed[ki])
-    #         else:
-    #             Q = self.add_points(Q, -precomputed[-ki])
-    #
-    #     return Q
+    def _precompute_win(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
+        res = [P]  # length=d LUT
+
+        for _ in range(1, d):
+            nex_point = self.k_point(1 << w, res[-1])
+            res.append(nex_point)
+
+        return res
+
+    def k_point_fixed_win(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+        ''' Fixed-base windowing method for fixed-point multiplication
+            ref: [1] Algorithm 3.41
+        '''
+        if k == 0:
+            return JacobianCoord.point_at_infinity(self.domain)
+
+        # Prepare to perform the multiplication
+        A = B = JacobianCoord.point_at_infinity(self.domain)
+
+        t = k.bit_length()
+        d = math.ceil(t / w)
+        precomputed = self._precompute_win(w, d, P)
+
+        # [_.to_affine() for _ in precomputed]  # debug usage
+
+        for j in range((1 << w) - 1, 0, -1):
+
+            for i in range(d):
+                Ki = ith_word(k, i, w)
+
+                if Ki != j:
+                    continue
+
+                B = self.add_points(B, precomputed[i])
+
+            A = self.add_points(A, B)
+
+        #region naf
+        # kp, kn = naf_prodinger(k)
+        #
+        # for i in range(d - 1, -1, -1):
+        #     Q = self.double_point(Q)
+        #     # ki = int_by_slider(k, d, i)
+        #     kpi = int_by_slider(kp, d, i)
+        #     kni = int_by_slider(kn, d, i)
+        #     ki = kpi - kni
+        #
+        #     if ki > 0:
+        #         Q = self.add_points(Q, precomputed[ki])
+        #     else:
+        #         Q = self.add_points(Q, -precomputed[-ki])
+        #endregion
+
+        return A

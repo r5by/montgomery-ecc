@@ -39,6 +39,28 @@ class JacobianCoord:
         neg_y = self.domain(-self.Y) if isinstance(self.Y, int) else -self.Y
         return JacobianCoord(self.X, neg_y, self.Z, self.domain)
 
+    def __eq__(self, other):
+        if not isinstance(other, JacobianCoord):
+            return NotImplemented
+
+        if self.domain != other.domain:
+            raise ValueError("Cannot compare points from different domains")
+
+        if self.is_point_at_infinity() and other.is_point_at_infinity():
+            return True
+        if self.is_point_at_infinity() or other.is_point_at_infinity():
+            return False
+
+        # Cross-multiplication to avoid division
+        # X1/Z1^2 == X2/Z2^2  --->  X1*Z2^2 == X2*Z1^2
+        left_x = self.X * other.Z ** 2
+        right_x = other.X * self.Z ** 2
+        # Y1/Z1^3 == Y2/Z2^3  --->  Y1*Z2^3 == Y2*Z1^3
+        left_y = self.Y * other.Z ** 3
+        right_y = other.Y * self.Z ** 3
+
+        return left_x == right_x and left_y == right_y
+
     def get_integer_coords(self) -> Tuple[int, int, int]:
         return int(self.X), int(self.Y), int(self.Z)
 

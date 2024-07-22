@@ -201,7 +201,8 @@ class TestShortWeierstrassCurve(unittest.TestCase):
             exp = k * SAGE_G256
             exp = (int(exp[0]), int(exp[1]), int(exp[2]))
 
-            act = p256.k_point_fixed(k, w=3, P=G256)
+            # act = p256.k_point_fixed(k, w=3, P=G256)
+            act = p256.k_point_fixed_win(k, w=4, P=G256)
             act.to_affine()
             act = act.get_integer_coords()
 
