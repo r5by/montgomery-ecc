@@ -14,7 +14,7 @@ from nist_curves import F_256, SAGE_F256, p256, SAGE_p256, G256, SAGE_G256, G256
 import hypothesis.strategies as st
 from hypothesis import given, assume, settings, example
 
-USE_MONT = False  # montgomery domain is very slow, use it in caution
+USE_MONT = True  # montgomery domain is very slow, use it in caution
 SLOW_SETTINGS = {}
 if "--fast" in sys.argv:  # pragma: no cover
     SLOW_SETTINGS["max_examples"] = 2
@@ -147,8 +147,8 @@ class TestShortWeierstrassCurve(unittest.TestCase):
 
     def test_point_add_z_eq(self):
         # randomly pick two points from list
-        i = random.randint(1, self.total)
-        j = random.randint(1, self.total)
+        i = random.randint(1, self.total - 1)
+        j = random.randint(1, self.total - 1)
         exp = add_lut(self.addition_table, i, j)
 
         # Scale the points into Jacobian with random {Z} while keeping both Z1=Z2 and Z1!=1 at the same time
@@ -159,8 +159,8 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         X1, Y1 = P.X, P.Y
         X2, Y2 = Q.X, Q.Y
 
-        P_jaco = JacobianCoord.copy(X1*Z**2, Y1*Z**3, Z, self.domain)
-        Q_jaco = JacobianCoord.copy(X2*Z**2, Y2*Z**3, Z, self.domain)
+        P_jaco = JacobianCoord.copy(X1*Z**2, Y1*Z**3, self.domain.ONE*Z, self.domain)
+        Q_jaco = JacobianCoord.copy(X2*Z**2, Y2*Z**3, self.domain.ONE*Z, self.domain)
         act = self.curve.add_points(P_jaco, Q_jaco)
         act = act.get_affine_coords()
 
