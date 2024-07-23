@@ -1,7 +1,7 @@
 from abc import ABC
 
 from mecc.interface import EllipticCurve
-from typing import Union, List
+from typing import Union, List, Optional
 from mecc.coordinate import JacobianCoord, PointAtInfinity
 from mont.typing import GFType
 from mont.common import ith_word
@@ -274,7 +274,7 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
 
         return res
 
-    def k_point_fixed(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+    def k_point_fixed(self, k: int, w: int, P: JacobianCoord, k_max_bits: Optional[int] = None) -> JacobianCoord:
         ''' Default fixed-point scalar multiplication using the Comb method
             ref [1] Algorithm 3.44
         '''
@@ -285,7 +285,7 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         # Prepare to perform the multiplication
         Q = JacobianCoord.point_at_infinity(self.domain)
 
-        t = k.bit_length()
+        t = k_max_bits if k_max_bits else k.bit_length()  # simulate the maximum LUT (precomputed&load per curve)
         d = math.ceil(t / w)
         precomputed = self._precompute_comb(w, d, P)
 

@@ -230,8 +230,14 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         act = p256.k_point_fixed(k, w=3, P=G256)
         act.to_affine()
         act = act.get_integer_coords()
-
         self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+
+        # test maximum d value:
+        max_t = F_256.modulus.bit_length()
+        act1 = p256.k_point_fixed(k, w=4, P=G256, k_max_bits=max_t)
+        act1.to_affine()
+        act1 = act1.get_integer_coords()
+        self.assertEqual(exp, act1, f'Scalar multiplication on Curve: {p256} fails at k={k}')
 
 
 if __name__ == "__main__":
