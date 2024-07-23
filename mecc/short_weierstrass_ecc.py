@@ -240,6 +240,20 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
 
         return Q
 
+    def _precompute_win(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
+        '''
+            Precompute 2^{wi}*P for i in [0 .. d-1] ({d} in total LUT entries)
+                * is THE precomputation for windowing method
+                * is Part of the precomputation for Comb method
+        '''
+        res = [P]  # length=d LUT
+
+        for _ in range(1, d):
+            nex_point = self.k_point(1 << w, res[-1])
+            res.append(nex_point)
+
+        return res
+
     def _precompute_comb(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
         ''' Precompute all combinations of w-bits repr of k with radix 2^d multiply the point P '''
         # NOTE: This precomputation depends on input (t) to generate (d) from (w), even though w is known!
@@ -247,14 +261,11 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         res = [INF for _ in range(1 << w)]  # len(Lut) = 2^w (can optimized the first two elements [INF, P] out)
 
         # step 1) calculate power_dp[i] saves 2^(id) * P for i in [0 .. w-1]
-        power_dp = [P]
-        for _ in range(1, w):
-            nex_point = self.k_point(1 << d, power_dp[-1])
-            power_dp.append(nex_point)
+        power_dp = self._precompute_win(d, w, P)
 
         # [_.to_affine() for _ in power_dp]  # debug usage
 
-        # step 2) populate the precomputations
+        # step 2) populate the precomputations suing DP
         for i in range(1, 1 << w):
             j, k = msb(i), turn_off_msb(i)
             tmp = self.add_points(res[k], power_dp[j])
@@ -284,15 +295,6 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             Q = self.add_points(Q, precomputed[ki])
 
         return Q
-
-    def _precompute_win(self, w: int, d: int, P: JacobianCoord) -> List[JacobianCoord]:
-        res = [P]  # length=d LUT
-
-        for _ in range(1, d):
-            nex_point = self.k_point(1 << w, res[-1])
-            res.append(nex_point)
-
-        return res
 
     def k_point_fixed_win(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
         ''' Fixed-base windowing method for fixed-point multiplication
@@ -337,5 +339,36 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         #     else:
         #         Q = self.add_points(Q, -precomputed[-ki])
         #endregion
+
+        return A
+
+    def k_point_fixed_win_naf(self, k: int, w: int, P: JacobianCoord) -> JacobianCoord:
+        ''' Fixed-base NAF windowing method for fixed-point multiplication
+            ref: [1] Algorithm 3.42
+        '''
+        if k == 0:
+            return JacobianCoord.point_at_infinity(self.domain)
+
+        A = B = JacobianCoord.point_at_infinity(self.domain)
+
+        kp, kn = naf_prodinger(k)
+        t = max(kp.bit_length(), kn.bit_length())
+        d = math.ceil(t / w)
+        precomputed = self._precompute_win(w, d, P)
+
+        # [_.to_affine() for _ in precomputed]  # debug usage
+
+        for j in range((1 << w) - 1, 0, -1):
+
+            for i in range(d):
+                Kpi, Kni = ith_word(kp, i, w), ith_word(kn, i, w)
+
+                if Kpi == j:
+                    B = self.add_points(B, precomputed[i])
+
+                if Kni == j:
+                    B = self.add_points(B, -precomputed[i])
+
+            A = self.add_points(A, B)
 
         return A

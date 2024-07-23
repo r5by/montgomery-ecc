@@ -194,20 +194,44 @@ class TestShortWeierstrassCurve(unittest.TestCase):
 
         self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
 
-    def test_nist_salar_mul_fixed(self):
+    @settings(**SLOW_SETTINGS)
+    @given(
+        st.integers(
+            min_value=1, max_value=int(F_256.modulus - 1)
+        )
+    )
+    def test_nist_salar_mul_fixed_win(self, k):
 
-        for i in range(30):
-            k = random.randint(2, 65537)
-            exp = k * SAGE_G256
-            exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+        exp = k * SAGE_G256
+        exp = (int(exp[0]), int(exp[1]), int(exp[2]))
 
-            # act = p256.k_point_fixed(k, w=3, P=G256)
-            act = p256.k_point_fixed_win(k, w=4, P=G256)
-            act.to_affine()
-            act = act.get_integer_coords()
+        act1 = p256.k_point_fixed_win_naf(k, w=3, P=G256)  # 1) NAF
+        act1.to_affine()
+        act1 = act1.get_integer_coords()
 
-            # print(f'{i}-th test success: k={k}')
-            self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+        act2 = p256.k_point_fixed_win(k, w=5, P=G256)  # 2) windowing
+        act2.to_affine()
+        act2 = act2.get_integer_coords()
+
+        # print(f'{i}-th test success: k={k}')
+        self.assertEqual(exp, act1, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+        self.assertEqual(exp, act2, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+
+    @settings(**SLOW_SETTINGS)
+    @given(
+        st.integers(
+            min_value=1, max_value=int(F_256.modulus - 1)
+        )
+    )
+    def test_nist_salar_mul_fixed_comb(self, k):
+        exp = k * SAGE_G256
+        exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+
+        act = p256.k_point_fixed(k, w=3, P=G256)
+        act.to_affine()
+        act = act.get_integer_coords()
+
+        self.assertEqual(exp, act, f'Scalar multiplication on Curve: {p256} fails at k={k}')
 
 
 if __name__ == "__main__":
