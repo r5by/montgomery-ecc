@@ -145,6 +145,27 @@ class TestShortWeierstrassCurve(unittest.TestCase):
             # print(f'done: {cnt + 1}/{total}%')
             cnt += 1
 
+    def test_point_add_z_eq(self):
+        # randomly pick two points from list
+        i = random.randint(1, self.total)
+        j = random.randint(1, self.total)
+        exp = add_lut(self.addition_table, i, j)
+
+        # Scale the points into Jacobian with random {Z} while keeping both Z1=Z2 and Z1!=1 at the same time
+        P = JacobianCoord.from_affine(self.affine_points[i], self.domain)
+        Q = JacobianCoord.from_affine(self.affine_points[j], self.domain)
+        Z_int = random.randint(2, self.p)
+        Z = self.domain(Z_int)
+        X1, Y1 = P.X, P.Y
+        X2, Y2 = Q.X, Q.Y
+
+        P_jaco = JacobianCoord.copy(X1*Z**2, Y1*Z**3, Z, self.domain)
+        Q_jaco = JacobianCoord.copy(X2*Z**2, Y2*Z**3, Z, self.domain)
+        act = self.curve.add_points(P_jaco, Q_jaco)
+        act = act.get_affine_coords()
+
+        self.assertEqual(exp, act)
+
     def test_nist_single_double(self):
         act = p256.double_point_affine(G256_affine)
         exp = 2 * SAGE_G256

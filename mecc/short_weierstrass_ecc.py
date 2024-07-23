@@ -3,7 +3,7 @@ from abc import ABC
 from mecc.interface import EllipticCurve
 from typing import Union, List, Optional
 from mecc.coordinate import JacobianCoord, PointAtInfinity
-from mont.typing import GFType
+from mont.typing import GFType, GFElementType
 from mont.common import ith_word
 from mecc.utils import naf_prodinger, int_by_slider, msb, turn_off_msb
 import math
@@ -136,28 +136,71 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         X1, Y1, Z1 = p1.X, p1.Y, p1.Z
         X2, Y2, Z2 = p2.X, p2.Y, p2.Z
 
-        # TODO> Optimizations
-        # if Z1 == Z2:
-        #     if Z1 == 1:
-        #         return self._add_points_Z1_eq_Z2_eq_1(X1, Y1, X2, Y2)
-        #
-        #     return self._add_points_Z1_eq_Z2(X1, Y1, X2, Y2, Z1)
-        #
-        # if Z2 == 1:
-        #     return self._add_points_Z2_eq_1(X1, Y1, Z1, X2, Y2)
+        # Optimizations
+        if Z1 == Z2:
+            if Z1 == 1:
+                return self._add_with_z_eq_1(X1, Y1, X2, Y2)
 
-        return self._add_points(X1, Y1, Z1, X2, Y2, Z2)
+            return self._add_with_z_eq(X1, Y1, X2, Y2, Z1)
 
-    def _add_points_Z1_eq_Z2_eq_1(self, X1, Y1, X2, Y2):
-        pass
+        if Z2 == 1:
+            return self._add_with_z2_1(X1, Y1, Z1, X2, Y2)
 
-    def _add_points_Z1_eq_Z2(self, X1, Y1, X2, Y2, Z1):
-        pass
+        return self._add_with_z_ne(X1, Y1, Z1, X2, Y2, Z2)
 
-    def _add_points_Z2_eq_1(self, X1, Y1, Z1, X2, Y2):
-        pass
+    def _add_with_z_eq_1(self, X1, Y1, X2, Y2):
+        """add points when both Z1 and Z2 equal 1"""
+        # after:
+        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-mmadd-2007-bl
+        H = X2 - X1
+        HH = H * H
+        I = fe_const_scala(4, HH)
+        J = H * I
+        r = fe_double(Y2 - Y1)
+        # ~~ H==r==0 indicates P==Q here ~~
+        V = X1 * I
 
-    def _add_points(self, X1, Y1, Z1, X2, Y2, Z2):
+        X3 = r ** 2 - J - fe_double(V)
+        Y3 = r * (V - X3) - fe_double(Y1) * J
+        Z3 = fe_double(H)
+        return JacobianCoord.copy(X3, Y3, Z3, self.domain)
+
+    def _add_with_z_eq(self, X1, Y1, X2, Y2, Z1):
+        """add points when Z1 == Z2"""
+        # after:
+        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-zadd-2007-m
+        A = (X2 - X1) ** 2
+        B = X1 * A
+        C = X2 * A
+        D = (Y2 - Y1) ** 2
+        # ~~ A == D == 0 indicates point double here ~~
+
+        X3 = D - B - C
+        Y3 = (Y2 - Y1) * (B - X3) - Y1 * (C - B)
+        Z3 = Z1 * (X2 - X1)
+        return JacobianCoord.copy(X3, Y3, Z3, self.domain)
+
+    def _add_with_z2_1(self, X1, Y1, Z1, X2, Y2):
+        """add points when Z2 == 1"""
+        # after:
+        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-madd-2007-bl
+        Z1Z1 = Z1 * Z1
+        U2 = X2 * Z1Z1
+        S2 = Y2 * Z1 * Z1Z1
+        H = U2 - X1
+        HH = H * H
+        I = fe_const_scala(4, HH)
+        J = H * I
+        r = fe_double(S2 - Y1)
+        # ~~ r == H == 0 indicates point double here ~~
+        V = X1 * I
+
+        X3 = r * r - J - fe_double(V)
+        Y3 = r * (V - X3) - fe_double(Y1) * J
+        Z3 = (Z1 + H) ** 2 - Z1Z1 - HH
+        return JacobianCoord.copy(X3, Y3, Z3, self.domain)
+
+    def _add_with_z_ne(self, X1, Y1, Z1, X2, Y2, Z2):
 
         Z1Z1 = Z1 ** 2  # 1S
         Z2Z2 = Z2 ** 2  # 2S
@@ -165,11 +208,15 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         U2 = X2 * Z1Z1  # 2M
         S1 = Y1 * Z2 * Z2Z2  # 4M
         S2 = Y2 * Z1 * Z1Z1  # 6M
-        H = U2 - U1  # IMPORTANT NOTE: This add_point formula can't be use for adding two same point (doubling),
-        # as H will be Zero that cause incorrect result!!
+        H = U2 - U1
         I = fe_double(H) ** 2  # 1*2, 3S
         J = H * I  # 7M
         r = fe_double(S2 - S1)  # 2*2
+
+        # IMPORTANT NOTE:
+        # This add_point formula can't be use for adding two same point (doubling),
+        # as H will be Zero that cause incorrect result!!
+        # ~~ H == r == 0 indicates a point double ~~
         V = U1 * I  # 8M
 
         X3 = r ** 2 - J - fe_double(V)  # 4S, 3*2
@@ -194,19 +241,33 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         if Y == 0:
             return JacobianCoord.point_at_infinity(self.domain)
 
-        # S = self.domain(4) * X * Y ** 2
+        if Z == 1:
+            return self._double_with_z_1(X, Y)
+
         S = fe_const_scala(4, X * Y ** 2)
-        # M = self.domain(3) * X ** 2 + self._a * Z ** 4
         M = fe_const_scala(3, X ** 2) + self._a * Z ** 4
 
-        # X_ = M ** 2 - self.domain(2) * S
         X_ = M ** 2 - fe_double(S)
-        # Y_ = M * (S - X_) - self.domain(8) * Y ** 4
         Y_ = M * (S - X_) - fe_const_scala(8, Y ** 4)
-        # Z_ = self.domain(2) * Y * Z
         Z_ = fe_double(Y * Z)
 
         return JacobianCoord.copy(X_, Y_, Z_, self.domain)
+
+    def _double_with_z_1(self, X1: GFElementType, Y1: GFElementType) -> JacobianCoord:
+        """Add a point to itself with z == 1."""
+        # after:
+        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-mdbl-2007-bl
+        XX = X1 * X1
+        YY = Y1 * Y1
+        YYYY = YY * YY
+        S = fe_double((X1 + YY) ** 2 - XX - YYYY)
+        M = fe_const_scala(3, XX) + self._a
+        T = M * M - fe_double(S)
+
+        # X3 = T
+        Y3 = M * (S - T) - fe_const_scala(8, YYYY)
+        Z3 = fe_double(Y1)
+        return JacobianCoord.copy(T, Y3, Z3, self.domain)
 
     def k_point_affine(self, k, p):
         pass
@@ -285,9 +346,10 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         # Prepare to perform the multiplication
         Q = JacobianCoord.point_at_infinity(self.domain)
 
-        t = k_max_bits if k_max_bits else k.bit_length()  # simulate the maximum LUT (precomputed&load per curve)
+        # simulate the maximum LUT (precomputed&load per curve)
+        t = k_max_bits if k_max_bits else k.bit_length()
         d = math.ceil(t / w)
-        precomputed = self._precompute_comb(w, d, P)
+        precomputed = self._precompute_comb(w, d, P)  # NOTE: should load this LUT from HW impl. in the real practice
 
         for i in range(d - 1, -1, -1):
             Q = self.double_point(Q)
