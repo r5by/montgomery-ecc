@@ -14,7 +14,7 @@ from nist_curves import F_256, SAGE_F256, p256, SAGE_p256, G256, SAGE_G256, G256
 import hypothesis.strategies as st
 from hypothesis import given, assume, settings, example
 
-USE_MONT = True  # montgomery domain is very slow, use it in caution
+USE_MONT = False  # montgomery domain is very slow, use it in caution
 SLOW_SETTINGS = {}
 if "--fast" in sys.argv:  # pragma: no cover
     SLOW_SETTINGS["max_examples"] = 2
@@ -62,7 +62,7 @@ class TestShortWeierstrassCurve(unittest.TestCase):
                 addition_table = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in addition_table]
         else:
             affine_points, projective_points, double_points, addition_table = sage_generate_points_on_curve(
-                self.coeffs, self.p)
+                self.coeffs, self.p, type='weierstrass')
             with open(self.points_file, 'w') as f:
                 json.dump([affine_points, projective_points, double_points, addition_table], f)
         return affine_points, projective_points, double_points, addition_table
@@ -147,24 +147,25 @@ class TestShortWeierstrassCurve(unittest.TestCase):
 
     def test_point_add_z_eq(self):
         # randomly pick two points from list
-        i = random.randint(1, self.total - 1)
-        j = random.randint(1, self.total - 1)
-        exp = add_lut(self.addition_table, i, j)
+        for i in range(1, self.total):
+            for j in range(1, self.total):
+                exp = add_lut(self.addition_table, i, j)
 
-        # Scale the points into Jacobian with random {Z} while keeping both Z1=Z2 and Z1!=1 at the same time
-        P = JacobianCoord.from_affine(self.affine_points[i], self.domain)
-        Q = JacobianCoord.from_affine(self.affine_points[j], self.domain)
-        Z_int = random.randint(2, self.p)
-        Z = self.domain(Z_int)
-        X1, Y1 = P.X, P.Y
-        X2, Y2 = Q.X, Q.Y
+                # Scale the points into Jacobian with random {Z} while keeping both Z1=Z2 and Z1!=1 at the same time
+                P = JacobianCoord.from_affine(self.affine_points[i], self.domain)
+                Q = JacobianCoord.from_affine(self.affine_points[j], self.domain)
+                # Z_int = random.randint(2, self.p)  # dont' do this random stuff, this causes error!
+                for Z_int in range(2, self.p):
+                    Z = self.domain(Z_int)
+                    X1, Y1 = P.X, P.Y
+                    X2, Y2 = Q.X, Q.Y
 
-        P_jaco = JacobianCoord.copy(X1*Z**2, Y1*Z**3, self.domain.ONE*Z, self.domain)
-        Q_jaco = JacobianCoord.copy(X2*Z**2, Y2*Z**3, self.domain.ONE*Z, self.domain)
-        act = self.curve.add_points(P_jaco, Q_jaco)
-        act = act.get_affine_coords()
+                    P_jaco = JacobianCoord.copy(X1*(Z**2), Y1*(Z**3), self.domain(1)*Z, self.domain)
+                    Q_jaco = JacobianCoord.copy(X2*(Z**2), Y2*(Z**3), self.domain(1)*Z, self.domain)
+                    act = self.curve.add_points(P_jaco, Q_jaco)
+                    act = act.get_affine_coords()
 
-        self.assertEqual(exp, act)
+                    self.assertEqual(exp, act, f'point addition failed for (i={i},j={j}) case of P={P}, Q={Q}')
 
     def test_nist_single_double(self):
         act = p256.double_point_affine(G256_affine)

@@ -24,6 +24,8 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         where a, b are coefficients in the domain
         References:
         [1] Guide to elliptic curve cryptography
+        [2] https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-add-2007-bl
+        [3] SP 800-186
     """
 
     def __init__(self, domain: GFType, *coeffs: Union[List[int], int, None], validate=False, **kwargs):
@@ -137,11 +139,11 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         X2, Y2, Z2 = p2.X, p2.Y, p2.Z
 
         # Optimizations
-        if Z1 == Z2:
-            if Z1 == 1:
-                return self._add_with_z_eq_1(X1, Y1, X2, Y2)
-
-            return self._add_with_z_eq(X1, Y1, X2, Y2, Z1)
+        # if Z1 == Z2:
+        #     if Z1 == 1:
+        #         return self._add_with_z_eq_1(X1, Y1, X2, Y2)
+        #
+        #     return self._add_with_z_eq(X1, Y1, X2, Y2, Z1)
 
         if Z2 == 1:
             return self._add_with_z2_1(X1, Y1, Z1, X2, Y2)

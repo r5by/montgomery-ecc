@@ -7,6 +7,7 @@ class GFmodp(GFType):
         # if not self._is_prime(p):
         #     raise ValueError("p must be a prime number.")
         self.modulus = p
+        super().__init__(p)  # setup the group order
 
     def __call__(self, value):
         return GFmodpElement(value % self.modulus, self)
