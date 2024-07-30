@@ -1,5 +1,6 @@
 from mont.typing import GFElementType, GFType
 from typing import Union, List, Optional, Tuple
+from abc import ABC, abstractmethod
 
 
 class PointAtInfinity:
@@ -15,7 +16,7 @@ class PointAtInfinity:
         return "InfinitePoint"
 
 
-class ProjectiveCoord:
+class ProjectiveCoord(ABC):
     def __init__(self,
                  x: Union[int, GFElementType],
                  y: Union[int, GFElementType],
@@ -47,14 +48,44 @@ class ProjectiveCoord:
         if all(isinstance(v, int) for v in [x, y, z]) and self.domain is None:
             raise TypeError("Arithmetic domain must be specified if all input coordinates are integers.")
 
+    def is_affine(self):
+        """Check if the point is in affine form."""
+        return self.Z == 1
+
+    def to_affine(self):
+
+        if self.is_identity_point() or self.is_affine():
+            return
+
+        self._to_affine()
+
+    @abstractmethod
+    def get_affine_coords(self):
+        """Get the affine coordinates of the point in raw (integer) type"""
+        pass
+
+    @abstractmethod
+    def is_identity_point(self):
+        """Method to determine if the point is the identity element of the curve group."""
+        pass
+
+    @abstractmethod
+    def _to_affine(self):
+        """Convert point to affine coordinates."""
+        pass
+
 
 class ExtendedCoord(ProjectiveCoord):
+    '''Refer to <<Twisted Edwards Curves Revisited>> Section 3.
+
+        [X : Y: T: Z] as extended of projective coord [X: Y: Z] for T=XY/Z
+    '''
 
     def __init__(self,
                  x: Union[int, GFElementType],
                  y: Union[int, GFElementType],
+                 t: Union[int, GFElementType],
                  z: Union[int, GFElementType] = 1,
-                 t: Union[int, GFElementType] = None,
                  domain: Optional[GFType] = None):
         super().__init__(x, y, z, domain)
         self.T = t
@@ -64,12 +95,12 @@ class ExtendedCoord(ProjectiveCoord):
         for twisted edward curve, the negation of point (X,Y,Z,T)
         is conventionally chosen to be (-X,Y,Z,-T)
         """
-        if self.is_point_at_infinity():
+        if self.is_identity_point():
             return self
 
         neg_x = self.domain(-self.X) if isinstance(self.X, int) else -self.X
         neg_t = self.domain(-self.T) if isinstance(self.T, int) else -self.T
-        return ExtendedCoord(neg_x, self.Y, self.Z, neg_t, self.domain)
+        return ExtendedCoord(neg_x, self.Y, neg_t, self.Z, self.domain)
 
     def __eq__(self, other):
 
@@ -79,9 +110,9 @@ class ExtendedCoord(ProjectiveCoord):
         if self.domain != other.domain:
             raise ValueError("Cannot compare points from different domains")
 
-        if self.is_point_at_infinity() and other.is_point_at_infinity():
+        if self.is_identity_point() and other.is_identity_point():
             return True
-        if self.is_point_at_infinity() or other.is_point_at_infinity():
+        if self.is_identity_point() or other.is_identity_point():
             return False
 
         # Use cross multiplication to compare without needing division
@@ -108,26 +139,19 @@ class ExtendedCoord(ProjectiveCoord):
         self.Z = domain(self.Z)
         self.T = domain(self.T)
 
-    def is_point_at_infinity(self):
+    def is_identity_point(self):
         """
-        Check if the point is the point at infinity in extended coordinates.
-        The point at infinity is typically [0 : 1 : 0 : 0], but we only check
-        X, Z, and T because Y becomes irrelevant when Z is zero.
+        Check if the point is the identity point in extended coordinates.
+        The point at infinity is typically [0 : 1 : 0: 1] (extended of (0:1:1))
         """
-        return self.X == 0 and self.Z == 0 and self.T == 0
-
-    def is_affine(self):
-        """
-        Check if the point is in affine coordinates.
-        A point is in affine coordinates if Z == 1.
-        """
-        # Check if the Z-coordinate is 1, which indicates affine coordinates
-        return self.Z == 1
+        zero = self.domain(0)
+        # Check the conditions for the identity point
+        return self.X == zero and self.Y == self.Z and self.T == zero
 
     @classmethod
-    def from_int_coord(cls, x: int, y: int, z: int = 1, t: Optional[int] = None, *, domain: GFType) -> \
+    def from_int_coord(cls, x: int, y: int, *, t: Optional[int] = None, z: int = 1, domain: GFType) -> \
             'ExtendedCoord':
-        p = cls(x, y, z, t, domain) if t else cls(x, y, z, 0, domain)
+        p = cls(x, y, t, z, domain) if t else cls(x, y, 0, z, domain)
         p.enter_domain(domain)
 
         # calc. T
@@ -140,51 +164,40 @@ class ExtendedCoord(ProjectiveCoord):
         return p
 
     @classmethod
-    def point_at_infinity(cls, domain: GFType):
-        # (0: 1: 0: 0) for extended vs. (0: 1: 0) for projective, note the difference.
-        return cls.from_int_coord(0, 1, 0, 0, domain=domain)
+    def get_identity_point(cls, domain: GFType):
+        # (0: 1: 1: 0) for extended coordinates of identity point (0,1) on affine plane of twisted edwards curves
+        return cls.from_int_coord(0, 1, t=0, z=1, domain=domain)
 
     @classmethod
-    def from_affine(cls, point: Union[List[int], PointAtInfinity], domain: GFType) -> 'ExtendedCoord':
+    def from_affine(cls, point: List[int], domain: GFType) -> 'ExtendedCoord':
         '''
-            Transfer affine coordinate [x, y] into ext [X:Y:1:T=x*y] (using domain arithmetics if domain is specified)
+            Transfer affine coordinate [x, y] into ext [X:Y: T=x*y: Z=1] (using domain arithmetics if domain is
+            specified)
             usage:
-                $ INF = InfinitePoint()
                 $ mont = Montgomery.factory(mod=29).build()
                 $ p1 = ExtendedCoord.from_affine([1, 2], mont)
-                # p2 = ExtendedCoord.from_affine(INF)
         '''
-        if isinstance(point, PointAtInfinity):
-            return cls.point_at_infinity(domain)
-
         if len(point) != 2:
             raise ValueError("Affine coordinates must be a list of two elements [x, y].")
         x, y = point
-        return cls.from_int_coord(x, y, 1, domain=domain)  # Z=1 for affine coordinates
+        return cls.from_int_coord(x=x, y=y, z=1, domain=domain)  # Z=1 for affine coordinates
 
-    @classmethod
-    def copy(cls, x: GFElementType, y: GFElementType, z: GFElementType, t: GFElementType, domain: GFType) -> 'ExtendedCoord':
-        return ExtendedCoord(x, y, z, t, domain)  # a deep copy
-
-    def get_affine_coords(self) -> Union[Tuple[int, int], PointAtInfinity]:
-        if self.is_point_at_infinity():
-            return PointAtInfinity()
+    def get_affine_coords(self) -> Tuple[int, int]:
 
         if not self.is_affine():
-            self._to_affine()  # todo>
+            self._to_affine()
 
         return int(self.X), int(self.Y)
 
     def to_affine(self):
 
-        if self.is_point_at_infinity() or self.is_affine():
+        if self.is_affine():
             return
 
         self._to_affine()
 
     def _to_affine(self):
         ''' Internal: project this point onto affine plane '''
-        # todo> what if Z == 0??
         X, Y, Z = self.X, self.Y, self.Z
         _Z = 1 / Z
 
@@ -202,7 +215,7 @@ class JacobianCoord(ProjectiveCoord):
 
     def __neg__(self):
         """Return the additive inverse of the point."""
-        if self.is_point_at_infinity():
+        if self.is_identity_point():
             return self
 
         neg_y = self.domain(-self.Y) if isinstance(self.Y, int) else -self.Y
@@ -215,9 +228,9 @@ class JacobianCoord(ProjectiveCoord):
         if self.domain != other.domain:
             raise ValueError("Cannot compare points from different domains")
 
-        if self.is_point_at_infinity() and other.is_point_at_infinity():
+        if self.is_identity_point() and other.is_identity_point():
             return True
-        if self.is_point_at_infinity() or other.is_point_at_infinity():
+        if self.is_identity_point() or other.is_identity_point():
             return False
 
         # Cross-multiplication to avoid division
@@ -243,11 +256,17 @@ class JacobianCoord(ProjectiveCoord):
         self.Y = domain(self.Y)
         self.Z = domain(self.Z)
 
-    def is_point_at_infinity(self):
+    def is_identity_point(self):
         return self.Z == 0
 
-    def is_affine(self):
-        return self.Z == 1
+    def get_affine_coords(self):
+        if self.is_identity_point():
+            return PointAtInfinity()
+
+        if not self.is_affine():
+            self._to_affine()
+
+        return self.X, self.Y
 
     @classmethod
     def point_at_infinity(cls, domain: GFType):
@@ -281,23 +300,6 @@ class JacobianCoord(ProjectiveCoord):
         p = cls(x, y, z, domain)
         p.enter_domain(domain)
         return p
-
-    def get_affine_coords(self) -> Union[Tuple[int, int], PointAtInfinity]:
-        if self.is_point_at_infinity():
-            return PointAtInfinity()
-
-        if not self.is_affine():
-            # todo> apply xgcd?
-            self._to_affine()
-
-        return int(self.X), int(self.Y)
-
-    def to_affine(self):
-
-        if self.is_point_at_infinity() or self.is_affine():
-            return
-
-        self._to_affine()
 
     def _to_affine(self):
         ''' Internal: project this point onto affine plane '''

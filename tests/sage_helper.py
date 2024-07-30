@@ -3,6 +3,7 @@ from typing import List
 
 
 class CustomSageTwistedEdwardsCurve:
+    # NOTE: Twisted Edwards Curves do NOT need a point at infinity!!
     def __init__(self, field, coeffs):
         self.field = field
         self.a = field(coeffs[0])
@@ -21,26 +22,26 @@ class CustomSageTwistedEdwardsCurve:
         # List all points in projective coord. on the curve (on affine plane)
         res = [(x_val, y_val, self.field(1)) for x_val in self.field for y_val in self.field
                if self.is_on_curve(x_val, y_val)]
-        res.append((0, 1, 0))  # don't forget the point at infinity
         return res
 
-    def double_affine(self, x1, y1):
+    def double(self, x1, y1):
+        if x1 == 0:   # short circuits for (0,1) and (0, -1)
+            return 0, 1
+
         # Apply the doubling formula for twisted Edwards curves
         a, d = self.a, self.d
-        x3 = (x1 * y1 + y1 * x1) / (1 + d * x1 * x1 * y1 * y1)
-        y3 = (y1 * y1 - a * x1 * x1) / (1 - d * x1 * x1 * y1 * y1)
-        return (int(x3), int(y3))
+        x3 = (x1 * y1 + y1 * x1) / (self.field(1) + d * x1 * x1 * y1 * y1)
+        y3 = (y1 * y1 - a * x1 * x1) / (self.field(1) - d * x1 * x1 * y1 * y1)
+        return int(x3), int(y3)
 
-    def add_affine(self, x1, y1, x2, y2):
-        # Apply the addition formula for twisted Edwards curves
+    def add(self, x1, y1, x2, y2):
+        if x1 == -x2 and y1 == y2:  # short circuits of inverse points
+            return 0, 1
+
         a, d = self.a, self.d
-        x3 = (x1 * y2 + y1 * x2) / (1 + d * x1 * x2 * y1 * y2)
-        y3 = (y1 * y2 - a * x1 * x2) / (1 - d * x1 * x2 * y1 * y2)
-        return (int(x3), int(y3))
-
-    def __neg__(self, x1, y1):
-        # Apply the negation formula for twisted Edwards curves
-        return (-x1, y1)
+        x3 = (x1 * y2 + y1 * x2) / (self.field(1) + d * x1 * x2 * y1 * y2)
+        y3 = (y1 * y2 - a * x1 * x2) / (self.field(1) - d * x1 * x2 * y1 * y2)
+        return int(x3), int(y3)
 
 
 def sage_generate_points_on_curve(curve_params: List[int], field_size: int, type: str):
@@ -72,30 +73,31 @@ def sage_generate_points_on_curve(curve_params: List[int], field_size: int, type
     cardinality = len(points)  # cardinality of the group over the ecc including point at infinity
     projective_points = [[int(point[0]), int(point[1]), int(point[2])] for point in points]
 
-    # map: proj -> affine
-    proj2affine = {}
-
-    # Filter out the point at infinity and convert to affine coordinates
-    affine_points = []
-    for p in points:
-
-        if p[2] == 0:
-            proj2affine[p] = 'INF'
-        else:
-            # if len(affine_points) >= num_points:
-            #     break
-
-            proj2affine[p] = proj_to_affine(p)
-
-        affine_points.append(proj2affine[p])
-
-    # 2) generate double points and addition table for testing point doubling
     if type == 'weierstrass':
+        # map: proj -> affine
+        proj2affine = {}
+
+        # Filter out the point at infinity and convert to affine coordinates
+        affine_points = []
+        for p in points:
+
+            if p[2] == 0:
+                proj2affine[p] = 'INF'
+            else:
+                # if len(affine_points) >= num_points:
+                #     break
+
+                proj2affine[p] = proj_to_affine(p)
+
+            affine_points.append(proj2affine[p])
+
+        # 2) generate double points and addition table for testing point double
         double_points = [proj2affine[2 * p] for p in points]
         addition_table = generate_flat_addition_table_weierstrass(points, proj2affine)
     elif type == 'edwards':
-        double_points = [(curve.double_affine(x[0], x[1]) if x != 'INF' else 'INF') for x in affine_points]
-        addition_table = generate_flat_addition_table_edwards(affine_points, curve)
+        affine_points = [(int(point[0]), int(point[1])) for point in points]
+        double_points = [curve.double(x[0], x[1]) for x in points]
+        addition_table = generate_flat_addition_table_edwards(points, curve)
 
     return affine_points, projective_points, double_points, addition_table
 
@@ -118,24 +120,14 @@ def generate_flat_addition_table_weierstrass(points, proj2affine):
     return flat_table
 
 
-def generate_flat_addition_table_edwards(affine_points, curve: CustomSageTwistedEdwardsCurve):
-    size = len(affine_points)
+def generate_flat_addition_table_edwards(points, curve: CustomSageTwistedEdwardsCurve):
+    size = len(points)
     flat_table = []
 
     for i in range(size):
         for j in range(i + 1):  # Only compute up to the diagonal
-            pX, pY = affine_points[i], affine_points[j]
-
-            if pX == 'INF' and pY == 'INF':
-                p = 'INF'
-
-            if pX == 'INF':
-                p = pY
-            elif pY == 'INF':
-                p = pX
-            else:
-                p = curve.add_affine(pX[0], pX[1], pY[0], pY[1])
-
+            pX, pY = points[i], points[j]
+            p = curve.add(pX[0], pX[1], pY[0], pY[1])
             flat_table.append(p)
 
     return flat_table

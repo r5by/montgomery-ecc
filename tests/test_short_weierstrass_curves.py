@@ -56,15 +56,16 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         if os.path.exists(self.points_file):
             with open(self.points_file, 'r') as f:
                 affine_points, projective_points, double_points, addition_table = json.load(f)
-                # Replace 'INF' with InfinitePoint() in affine_points
-                affine_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in affine_points]
-                double_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in double_points]
-                addition_table = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in addition_table]
         else:
             affine_points, projective_points, double_points, addition_table = sage_generate_points_on_curve(
                 self.coeffs, self.p, type='weierstrass')
             with open(self.points_file, 'w') as f:
                 json.dump([affine_points, projective_points, double_points, addition_table], f)
+
+        # Replace 'INF' with InfinitePoint() in affine_points
+        affine_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in affine_points]
+        double_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in double_points]
+        addition_table = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in addition_table]
         return affine_points, projective_points, double_points, addition_table
 
     def test_init(self):
@@ -117,7 +118,7 @@ class TestShortWeierstrassCurve(unittest.TestCase):
         off_point_jaco = JacobianCoord.from_affine(off_point, self.domain)
         self.assertFalse(self.curve.is_point_on_curve(off_point_jaco))
 
-    @profiler(1, enabled=USE_MONT)
+    @profiler(1, enabled=not USE_MONT)
     def test_affine_point_double(self):
         cnt, total = 0, self.total
         for i in range(self.total):
@@ -130,7 +131,7 @@ class TestShortWeierstrassCurve(unittest.TestCase):
             # print(f'done: {cnt + 1}/{total}%')
             cnt += 1
 
-    @profiler(1, enabled=USE_MONT)
+    @profiler(1, enabled=not USE_MONT)
     def test_affine_point_add_normal(self):
         # g = add_lut(self.addition_table, 3, 7)
 

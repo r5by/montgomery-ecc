@@ -71,7 +71,7 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             3) JacobianCoord: already in jacobian
         """
         if isinstance(point, JacobianCoord):
-            if point.is_point_at_infinity():
+            if point.is_identity_point():
                 return True
 
             if point.domain is None:
@@ -127,9 +127,9 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             ref: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-mmadd-2007-bl
         '''
 
-        if p1.is_point_at_infinity():
+        if p1.is_identity_point():
             return p2
-        if p2.is_point_at_infinity():
+        if p2.is_identity_point():
             return p1
 
         if p1 == p2:  # !! Important !!
@@ -139,11 +139,11 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         X2, Y2, Z2 = p2.X, p2.Y, p2.Z
 
         # Optimizations
-        # if Z1 == Z2:
-        #     if Z1 == 1:
-        #         return self._add_with_z_eq_1(X1, Y1, X2, Y2)
-        #
-        #     return self._add_with_z_eq(X1, Y1, X2, Y2, Z1)
+        if Z1 == Z2:
+            if Z1 == 1:
+                return self._add_with_z_eq_1(X1, Y1, X2, Y2)
+
+            return self._add_with_z_eq(X1, Y1, X2, Y2, Z1)
 
         if Z2 == 1:
             return self._add_with_z2_1(X1, Y1, Z1, X2, Y2)
@@ -279,7 +279,7 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
                 use NAF(prodinger) to minimize the point add/sub operations
          '''
 
-        if k == 0 or P.is_point_at_infinity():
+        if k == 0 or P.is_identity_point():
             return JacobianCoord.point_at_infinity(self.domain)
 
         if k == 1:

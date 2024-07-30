@@ -46,14 +46,12 @@ class TestTwistedEdwardsCurve(unittest.TestCase):
         self.affine_points, self.proj_points, self.double_points, self.addition_table = self.load_or_generate_points()
         self.cardinality = len(self.affine_points)
 
+        self.total = len(self.affine_points)
+
     def load_or_generate_points(self):
         if os.path.exists(self.points_file):
             with open(self.points_file, 'r') as f:
                 affine_points, projective_points, double_points, addition_table = json.load(f)
-                # Replace 'INF' with InfinitePoint() in affine_points
-                affine_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in affine_points]
-                double_points = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in double_points]
-                addition_table = [PointAtInfinity() if pt == 'INF' else tuple(pt) for pt in addition_table]
         else:
             affine_points, projective_points, double_points, addition_table = sage_generate_points_on_curve(
                 self.coeffs, self.p, type='edwards')
@@ -96,4 +94,31 @@ class TestTwistedEdwardsCurve(unittest.TestCase):
         off_point = [1, 3]
         self.assertFalse(self.curve.is_point_on_curve(off_point))
 
+    @profiler(10, enabled=not USE_MONT)
+    def test_affine_point_double(self):
+        cnt, total = 0, self.total
+        for i in range(self.total):
+            p = self.affine_points[i]
+            exp = tuple(self.double_points[i])
 
+            act = self.curve.double_point_affine(p)
+            self.assertEqual(exp, act)
+
+            cnt += 1
+
+    @profiler(1, enabled=not USE_MONT)
+    def test_affine_point_add_normal(self):
+
+        cnt, total = 0, self.total - 1
+        for i in range(self.total - 1):
+
+            exp = tuple(add_lut(self.addition_table, i, i + 1))
+
+            P, Q = self.affine_points[i], self.affine_points[i + 1]
+
+            # print(f'Adding points P={P} with Q={Q}')
+            act = self.curve.add_points_affine(P, Q)
+            self.assertEqual(exp, act)
+
+            # print(f'i={i}-th test is done: {cnt + 1}/{total}%')
+            cnt += 1
