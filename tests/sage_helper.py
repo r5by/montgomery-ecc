@@ -1,5 +1,5 @@
 from sage.all import GF, polygens, Curve, EllipticCurve as SageEllipticCurve
-from typing import List
+from typing import List, Tuple
 
 
 class CustomSageTwistedEdwardsCurve:
@@ -24,8 +24,11 @@ class CustomSageTwistedEdwardsCurve:
                if self.is_on_curve(x_val, y_val)]
         return res
 
+    def double_point(self, p: List[int]):
+        return self.double(p[0], p[1])
+
     def double(self, x1, y1):
-        if x1 == 0:   # short circuits for (0,1) and (0, -1)
+        if x1 == 0:  # short circuits for (0,1) and (0, -1)
             return 0, 1
 
         # Apply the doubling formula for twisted Edwards curves
@@ -33,6 +36,9 @@ class CustomSageTwistedEdwardsCurve:
         x3 = (x1 * y1 + y1 * x1) / (self.field(1) + d * x1 * x1 * y1 * y1)
         y3 = (y1 * y1 - a * x1 * x1) / (self.field(1) - d * x1 * x1 * y1 * y1)
         return int(x3), int(y3)
+
+    def add_points(self, p1, p2):
+        return self.add(p1[0], p1[1], p2[0], p2[1])
 
     def add(self, x1, y1, x2, y2):
         if x1 == -x2 and y1 == y2:  # short circuits of inverse points
@@ -42,6 +48,18 @@ class CustomSageTwistedEdwardsCurve:
         x3 = (x1 * y2 + y1 * x2) / (self.field(1) + d * x1 * x2 * y1 * y2)
         y3 = (y1 * y2 - a * x1 * x2) / (self.field(1) - d * x1 * x2 * y1 * y2)
         return int(x3), int(y3)
+
+    def k_points(self, k: int, p: Tuple[int, int]) -> Tuple[int, int]:
+        result = (0, 1)  # the neutral element, assuming (0,1) is the identity element on the curve
+        addend = p
+
+        while k:
+            if k & 1:  # If k is odd, add the current addend to the result
+                result = self.add_points(result, addend)
+            addend = self.double_point(addend)  # Double the point for the next iteration
+            k >>= 1  # Right shift k by 1
+
+        return result
 
 
 def sage_generate_points_on_curve(curve_params: List[int], field_size: int, type: str):

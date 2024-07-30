@@ -1,6 +1,6 @@
 from abc import ABC
 
-from mecc.interface import EllipticCurve
+from mecc.ecc import EllipticCurve
 from typing import Union, List
 from mecc.coordinate import ExtendedCoord, PointAtInfinity
 from mont.typing import GFType, GFElementType
@@ -9,7 +9,7 @@ const_scala = lambda c, x: sum([x for _ in range(c)])  # c*x for c as a constant
 double = lambda x: x + x
 
 
-class TwistedEdwards(EllipticCurve, ABC):
+class TwistedEdwardsCurve(EllipticCurve, ABC):
     """
         A twisted edwards curve has the following form:
             ax^2 + y^2 = 1 + dx^2y^2  (affine)
@@ -356,7 +356,3 @@ class TwistedEdwards(EllipticCurve, ABC):
         Z3 = F * G
 
         return ExtendedCoord(X3, Y3, T3, Z3, self.domain)
-
-    def k_point(self, k, p):
-        """Perform scalar multiplication of a point by k."""
-        pass

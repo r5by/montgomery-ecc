@@ -60,6 +60,10 @@ class ProjectiveCoord(ABC):
         self._to_affine()
 
     @abstractmethod
+    def __neg__(self):
+        pass
+
+    @abstractmethod
     def get_affine_coords(self):
         """Get the affine coordinates of the point in raw (integer) type"""
         pass
@@ -72,6 +76,11 @@ class ProjectiveCoord(ABC):
     @abstractmethod
     def _to_affine(self):
         """Convert point to affine coordinates."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_identity_point(cls, domain: GFType):
         pass
 
 
@@ -269,7 +278,7 @@ class JacobianCoord(ProjectiveCoord):
         return self.X, self.Y
 
     @classmethod
-    def point_at_infinity(cls, domain: GFType):
+    def get_identity_point(cls, domain: GFType):
         # Note (1: 1: 0) for jacobian and (0: 1: 0) for projective, note the difference.
         return cls.from_int_coord(1, 1, 0, domain)
 
@@ -284,7 +293,7 @@ class JacobianCoord(ProjectiveCoord):
                 # p2 = JacobianCoord.from_affine(INF)
         '''
         if isinstance(point, PointAtInfinity):
-            return cls.point_at_infinity(domain)
+            return cls.get_identity_point(domain)
 
         if len(point) != 2:
             raise ValueError("Affine coordinates must be a list of two elements [x, y].")
