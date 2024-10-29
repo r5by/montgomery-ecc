@@ -113,3 +113,33 @@ class EllipticCurve(ABC):
             Q = self.add_points(Q, precomputed[ki])
 
         return Q
+
+    def k_point_fixed_256(self, k: int, w: int, P: ProjectiveCoord, k_max_bits: Optional[int] = None) -> (
+            ProjectiveCoord):
+        ''' fixed (t, d, w) for 256-bit curves, including SM2
+        '''
+        # print(f'Starting scalar mul for k(={k})*P(={P})')
+        if k == 0:
+            return type(P).get_identity_point(self.domain)
+
+        # Prepare to perform the multiplication
+        Q = type(P).get_identity_point(self.domain)
+
+        # for SM2 fixed parameters
+        t ,d ,w = 256, 64, 4
+        precomputed = self._precompute_comb(w, d, P)  # NOTE: should load this LUT from HW impl. in the real practice
+
+        # print_lut used to output copy-paste values for precomputed LUT
+        # print_lut = []
+        # for entry in precomputed:
+        #     x_val = int(entry.X)
+        #     y_val = int(entry.Y)
+        #     print_lut.append((x_val, y_val))
+
+        for i in range(d - 1, -1, -1):
+            Q = self.double_point(Q)
+            ki = int_by_slider(k, d, i)
+            Q = self.add_points(Q, precomputed[ki])
+
+        return Q
+

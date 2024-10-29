@@ -127,12 +127,13 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
             ref: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-mmadd-2007-bl
         '''
 
+        # !! Important, or else this impl fails !!
         if p1.is_identity_point():
             return p2
         if p2.is_identity_point():
             return p1
 
-        if p1 == p2:  # !! Important !!
+        if p1 == p2:  # !! Important, or else this impl fails !!
             return self.double_point(p1)
 
         X1, Y1, Z1 = p1.X, p1.Y, p1.Z

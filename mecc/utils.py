@@ -76,7 +76,7 @@ def int_by_slider(n: int, d: int, i: int) -> int:
         e.g.
             >>> n = 1457
             >>> x = int_by_slider(n, d=4, i=0)  # x=1
-            >>> y = int_by_slider(n, d=4, i=1)  # x=14
+            >>> y = int_by_slider(n, d=3, i=1)  # y=14
     '''
     index = 0
     n >>= i
@@ -89,6 +89,12 @@ def int_by_slider(n: int, d: int, i: int) -> int:
         index += 1
     return r
 
+# x0 = int_by_slider(29, 2, 1)
+# x1 = int_by_slider(15, 1, 0)
+# x2 = int_by_slider(255, 1, 3)
+# x3 = int_by_slider(1023, 2, 0)
+# x4 = int_by_slider(1457, 3, 14)
+# print('done')
 
 # t = 27
 # naf_t_correct = _naf(t)
