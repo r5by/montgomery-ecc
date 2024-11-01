@@ -105,6 +105,7 @@ class EllipticCurve(ABC):
         # simulate the maximum LUT (precomputed&load per curve)
         t = k_max_bits if k_max_bits else k.bit_length()
         d = math.ceil(t / w)
+
         precomputed = self._precompute_comb(w, d, P)  # NOTE: should load this LUT from HW impl. in the real practice
 
         for i in range(d - 1, -1, -1):
@@ -130,11 +131,12 @@ class EllipticCurve(ABC):
         precomputed = self._precompute_comb(w, d, P)  # NOTE: should load this LUT from HW impl. in the real practice
 
         # print_lut used to output copy-paste values for precomputed LUT
-        # print_lut = []
-        # for entry in precomputed:
-        #     x_val = int(entry.X)
-        #     y_val = int(entry.Y)
-        #     print_lut.append((x_val, y_val))
+        print_lut = []
+        for entry in precomputed:
+            x_val = entry.X.value
+            y_val = entry.Y.value
+            z_val = entry.Z.value
+            print_lut.append((x_val, y_val))
 
         for i in range(d - 1, -1, -1):
             Q = self.double_point(Q)

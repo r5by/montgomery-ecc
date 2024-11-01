@@ -54,7 +54,7 @@ class ProjectiveCoord(ABC):
 
     def to_affine(self):
 
-        if self.is_identity_point() or self.is_affine():
+        if self.is_affine():
             return
 
         self._to_affine()
@@ -244,11 +244,24 @@ class JacobianCoord(ProjectiveCoord):
 
         # Cross-multiplication to avoid division
         # X1/Z1^2 == X2/Z2^2  --->  X1*Z2^2 == X2*Z1^2
-        left_x = self.X * other.Z ** 2
-        right_x = other.X * self.Z ** 2
+        Z2 = other.Z
+        Z2Z2 = Z2 * Z2
+        # left_x = self.X * other.Z ** 2
+        left_x = self.X * Z2Z2
+
+        Z1 = self.Z
+        Z1Z1 = Z1 * Z1
+        # right_x = other.X * self.Z ** 2
+        right_x = other.X * Z1Z1
+
         # Y1/Z1^3 == Y2/Z2^3  --->  Y1*Z2^3 == Y2*Z1^3
-        left_y = self.Y * other.Z ** 3
-        right_y = other.Y * self.Z ** 3
+        Z2Z2Z2 = Z2Z2 * Z2
+        # left_y = self.Y * other.Z ** 3
+        left_y = self.Y * Z2Z2Z2
+
+        Z1Z1Z1 = Z1Z1 * Z1
+        # right_y = other.Y * self.Z ** 3
+        right_y = other.Y * Z1Z1Z1
 
         return left_x == right_x and left_y == right_y
 
@@ -312,6 +325,12 @@ class JacobianCoord(ProjectiveCoord):
 
     def _to_affine(self):
         ''' Internal: project this point onto affine plane '''
+        if self.is_identity_point():
+            # clear x, and y if z == 0 (identity)
+            self.X = self.domain(1)
+            self.Y = self.domain(1)
+            return
+
         # Cost: 1I(inverse) + 1S(square) + 3M(multiplication)
         X, Y, Z = self.X, self.Y, self.Z
         _Z = 1 / Z

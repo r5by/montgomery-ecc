@@ -8,9 +8,7 @@ from mont.common import ith_word
 from mecc.utils import naf_prodinger, int_by_slider, msb, turn_off_msb
 import math
 
-# Quick field elements operations (following OpenSSL's naming convention)
-fe_const_scala = lambda c, x: sum([x for _ in range(c)])  # c*x for c as a constant
-fe_double = lambda x: x + x
+from mecc.utils import fe_double, fe_const_scala
 
 
 class ShortWeierstrassCurve(EllipticCurve, ABC):
@@ -163,7 +161,8 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         # ~~ H==r==0 indicates P==Q here ~~
         V = X1 * I
 
-        X3 = r ** 2 - J - fe_double(V)
+        rr = r * r
+        X3 = rr - J - fe_double(V)
         Y3 = r * (V - X3) - fe_double(Y1) * J
         Z3 = fe_double(H)
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
@@ -172,12 +171,18 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         """add points when Z1 == Z2"""
         # after:
         # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-zadd-2007-m
-        A = (X2 - X1) ** 2
+        # A = (X2 - X1) ** 2
+        _X21 = X2 - X1
+        A = _X21 * _X21
+
         B = X1 * A
         C = X2 * A
-        D = (Y2 - Y1) ** 2
-        # ~~ A == D == 0 indicates point double here ~~
 
+        # D = (Y2 - Y1) ** 2
+        _Y21 = Y2 - Y1
+        D = _Y21 * _Y21
+
+        # ~~ A == D == 0 indicates point double here ~~
         X3 = D - B - C
         Y3 = (Y2 - Y1) * (B - X3) - Y1 * (C - B)
         Z3 = Z1 * (X2 - X1)
@@ -200,19 +205,31 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
 
         X3 = r * r - J - fe_double(V)
         Y3 = r * (V - X3) - fe_double(Y1) * J
-        Z3 = (Z1 + H) ** 2 - Z1Z1 - HH
+
+        Z1_H = Z1 + H
+        _Z1_H2 = Z1_H * Z1_H
+        # Z3 = (Z1 + H) ** 2 - Z1Z1 - HH
+        Z3 = _Z1_H2 - Z1Z1 - HH
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 
     def _add_with_z_ne(self, X1, Y1, Z1, X2, Y2, Z2):
 
-        Z1Z1 = Z1 ** 2  # 1S
-        Z2Z2 = Z2 ** 2  # 2S
+        # Z1Z1 = Z1 ** 2  # 1S
+        Z1Z1 = Z1 * Z1
+
+        # Z2Z2 = Z2 ** 2  # 2S
+        Z2Z2 = Z2 * Z2  # 2S
+
         U1 = X1 * Z2Z2  # 1M
         U2 = X2 * Z1Z1  # 2M
         S1 = Y1 * Z2 * Z2Z2  # 4M
         S2 = Y2 * Z1 * Z1Z1  # 6M
         H = U2 - U1
-        I = fe_double(H) ** 2  # 1*2, 3S
+
+        # I = fe_double(H) ** 2  # 1*2, 3S
+        _2H = fe_double(H)
+        I = _2H * _2H  # 1*2, 3S
+
         J = H * I  # 7M
         r = fe_double(S2 - S1)  # 2*2
 
@@ -222,9 +239,14 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         # ~~ H == r == 0 indicates a point double ~~
         V = U1 * I  # 8M
 
-        X3 = r ** 2 - J - fe_double(V)  # 4S, 3*2
+        rr = r * r
+        X3 = rr - J - fe_double(V)  # 4S, 3*2
         Y3 = r * (V - X3) - fe_double(S1 * J)  # 10M, 4*2
-        Z3 = ((Z1 + Z2) ** 2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
+
+        Z1_Z2 = Z1 + Z2
+        _Z1_Z2_2 = Z1_Z2 * Z1_Z2
+        # Z3 = ((Z1 + Z2) ** 2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
+        Z3 = (_Z1_Z2_2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
 
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 
@@ -247,14 +269,30 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         if Z == 1:
             return self._double_with_z_1(X, Y)
 
-        S = fe_const_scala(4, X * Y ** 2)
-        M = fe_const_scala(3, X ** 2) + self._a * Z ** 4
+        return self._double(X, Y, Z)
 
-        X_ = M ** 2 - fe_double(S)
-        Y_ = M * (S - X_) - fe_const_scala(8, Y ** 4)
-        Z_ = fe_double(Y * Z)
+    def _double(self, X1: GFElementType, Y1: GFElementType, Z1: GFElementType) -> JacobianCoord:
+        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-dbl-1998-cmo-2
 
-        return JacobianCoord.copy(X_, Y_, Z_, self.domain)
+        XX = X1 * X1
+        YY = Y1 * Y1
+        ZZ = Z1 * Z1
+
+        S = fe_const_scala(4, X1 * YY)
+
+        ZZZZ = ZZ * ZZ
+        M = fe_const_scala(3, XX) + self._a * ZZZZ
+
+        MM = M * M
+        T = MM - fe_double(S)
+
+        X3 = T
+        YYYY = YY * YY
+        Y3 = M * (S - T) - fe_const_scala(8, YYYY)
+        Z3 = fe_double(Y1 * Z1)
+
+        return JacobianCoord.copy(X3, Y3, Z3, self.domain)
+
 
     def _double_with_z_1(self, X1: GFElementType, Y1: GFElementType) -> JacobianCoord:
         """Add a point to itself with z == 1."""

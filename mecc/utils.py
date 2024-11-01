@@ -2,6 +2,10 @@
 msb = lambda n: n.bit_length() - 1
 turn_off_msb = lambda n: n & ~(1 << (n.bit_length() - 1))
 
+# Quick field elements operations (following OpenSSL's naming convention)
+fe_const_scala = lambda c, x: sum([x for _ in range(c)])  # c*x for c as a constant
+fe_double = lambda x: x + x
+
 
 def _naf(mult):
     """Standard way of calculating non-adjacent form of number."""

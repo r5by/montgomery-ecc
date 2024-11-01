@@ -39,11 +39,8 @@ def mod_p(x):
 def mod_p_inv(x):
     return pow(x, p - 2, p)
 
-def double_point(p):
-    X = p.x
-    Y = p.y
-    Z = p.z
-
+# inline-free double point
+def _double_point(X, Y, Z):
     S = mod_p(4 * X * mod_p(Y * Y))
     Z2 = mod_p(Z * Z)
     Z4 = mod_p(Z2 * Z2)
@@ -54,25 +51,23 @@ def double_point(p):
     Y4 = mod_p(Y2 * Y2)
     Y_ = mod_p(mod_p(M * (S - X_)) - mod_p(8 * Y4))
     Z_ = mod_p(2 * Y * Z)
+    return X_, Y_, Z_
 
+def double_point(p):
+    X_, Y_, Z_ = _double_point(p.x, p.y, p.z)
     return ProjectiveCoord(X_, Y_, Z_)
 
-def add_point(p1, p2):
-    X1 = p1.x
-    Y1 = p1.y
-    Z1 = p1.z
-    X2 = p2.x
-    Y2 = p2.y
-    Z2 = p2.z
+# inline-free point add
+def _add_point(X1, Y1, Z1, X2, Y2, Z2):
 
     if Z1 == 0:
-        return p2
+        return X2, Y2, Z2
 
     if Z2 == 0:
-        return p1
+        return X1, Y1, Z1
 
     if X1 == X2 and Y1 == Y2 and Z1 == Z2:
-        return double_point(p1)
+        return _double_point(X1, Y1, Z1)
 
     Z1Z1 = mod_p(Z1 * Z1)
     Z2Z2 = mod_p(Z2 * Z2)
@@ -90,11 +85,17 @@ def add_point(p1, p2):
 
     V = mod_p(U1 * I)
     _2V = mod_p(V + V)
-
     _r2 = mod_p(r * r)
+
     X3 = mod_p(_r2 - J - _2V)
     Y3 = mod_p(r * (V - X3) - 2 * mod_p(S1 * J))
     Z3 = mod_p((mod_p((Z1 + Z2) * (Z1 + Z2)) - Z1Z1 - Z2Z2) * H)
+    return X3, Y3, Z3
+
+def add_point(p1, p2):
+
+    X3, Y3, Z3 = _add_point(p1.x, p1.y, p1.z,
+                            p2.x, p2.y, p2.z)
 
     return ProjectiveCoord(X3, Y3, Z3)
 
@@ -113,21 +114,14 @@ def int_by_slider(n, d, i):
 
     return r
 
-
-def test_slider(n, d, i, expected):
-    result = int_by_slider(n, d, i)
-    if result == expected:
-        print(f"Test passed for n={n}, d={d}, i={i}: result={result}")
-    else:
-        print(f"Test failed for n={n}, d={d}, i={i}: expected={expected}, got={result}")
-
 def k_point_fixed(k, px, py, pz):
     q = ProjectiveCoord(1, 1, 0)
     d = 64
 
-    for i in range(d - 1, -1, -1):
+    # for i in range(d - 1, -1, -1):
+    for i in range(d):
         q = double_point(q)
-        ki = int_by_slider(k, d, i)
+        ki = int_by_slider(k, d, d - i - 1)
 
         if ki == 0:
             continue
@@ -183,16 +177,15 @@ def k_point_fixed_inlined(k, px, py, pz):
         q.z = Z_
 
         # Inlined int_by_slider function
-        n = k
-        n >>= i
+        n = k >> i
         index = 0
-        r = 0
-        while n > 0:
-            b = n & 1  # Get the least significant bit
-            r |= (b << index)  # Set the corresponding bit in r
-            n >>= d  # Right shift n by d positions
+        ki = 0
+        tmp_n = n
+        while tmp_n > 0:
+            b = tmp_n & 1  # Get the least significant bit
+            ki |= (b << index)  # Set the corresponding bit in r
+            tmp_n >>= d  # Right shift n by d positions
             index += 1  # Move to the next bit position in r
-        ki = r
 
         if ki == 0:
             continue
@@ -267,8 +260,186 @@ def k_point_fixed_inlined(k, px, py, pz):
 
     return q
 
-def main():
-    golden = "sm2_fpm_golden.data"
+def naf_prodinger(x):
+    # https://en.wikipedia.org/wiki/Non-adjacent_form
+    xh = x >> 1
+    x3 = x + xh
+    c = xh ^ x3
+    np = x3 & c
+    nm = xh & c
+    return np, nm
+
+def k_point(k: int, P: ProjectiveCoord) -> ProjectiveCoord:
+    ''' ECSM (elliptic curve scalar multiplication) of k*P for P is unfixed point
+            use NAF(prodinger) to minimize the point add/sub operations
+     '''
+
+    if k == 0 or (P.x == 1 and P.y == 1 and P.z == 0):
+        return ProjectiveCoord(1, 1, 0)
+
+    if k == 1:
+        return P
+
+    np, nm = naf_prodinger(k)
+
+    # Project point p onto affine to safe the loop cost on addition and subtraction
+    P = to_affine(P.x, P.y, P.z)
+    Q = ProjectiveCoord(1, 1, 0)
+
+    # Determine maximum bit length of np or nm to determine loop range
+    max_bit_length = max(np.bit_length(), nm.bit_length())
+
+    for i in range(max_bit_length - 1, -1, -1):
+
+        Q = double_point(Q)
+
+        # 1) original approach
+        # if (np >> i) & 1:
+        #     Q = add_point(P, Q)
+        #
+        # if (nm >> i) & 1:
+        #     neg_P = ProjectiveCoord(P.x, p - P.y, P.z)
+        #     Q = add_point(neg_P, Q)
+
+        # 2) optimized for assembly, not f_np && f_nm is impossible for a valid NAF
+        f_np = (np >> i) & 1
+        f_nm = (nm >> i) & 1
+
+        py = P.y
+        if f_nm:
+            py = p - P.y
+        # elif f_np:
+        #     py = P.y
+
+        f_np_or_nm = f_nm or f_np
+        if f_np_or_nm:
+            Q.x, Q.y, Q.z = _add_point(P.x, py, P.z, Q.x, Q.y, Q.z)
+
+    return Q
+
+def k_point_inlined(k: int, P: ProjectiveCoord) -> ProjectiveCoord:
+
+    if k == 0 or (P.x == 1 and P.y == 1 and P.z == 0):
+        return ProjectiveCoord(1, 1, 0)
+
+    if k == 1:
+        return P
+
+    # inline: np, nm = naf_prodinger(k)
+    xh = k >> 1
+    x3 = k + xh
+    c = xh ^ x3
+    np = x3 & c
+    nm = xh & c
+
+    # Project point p onto affine to safe the loop cost on addition and subtraction
+    # P = to_affine(P.x, P.y, P.z)
+    ## Inline replace P ==> PX, PY, PZ:
+    PX = P.x
+    PY = P.y
+    PZ = P.z
+
+    if PZ == 0:
+        PX = 1
+        PY = 1
+    else:
+        _Z = mod_p_inv(PZ)
+        _Z2 = mod_p(_Z * _Z)
+        _Z3 = mod_p(_Z * _Z2)
+
+        PX = mod_p(PX * _Z2)
+        PY = mod_p(PY * _Z3)
+
+    # Q = ProjectiveCoord(1, 1, 0)
+    # Inline replace ==>
+    QX = 1
+    QY = 1
+    QZ = 0
+
+    # Determine maximum bit length of np or nm to determine loop range
+    # max_bit_length = max(np.bit_length(), nm.bit_length())
+    # Inline replace (for SM2) ==>
+    max_bit_length = 256
+
+    for i in range(max_bit_length - 1, -1, -1):
+        # Q = double_point(Q)
+        # inline replace ==>
+        # QX, QY, QZ = _double_point(QX, QY, QZ)
+        # inline replace ==>
+        S = mod_p(4 * QX * mod_p(QY * QY))
+        Z2 = mod_p(QZ * QZ)
+        Z4 = mod_p(Z2 * Z2)
+        M = mod_p(3 * mod_p(QX * QX) + a * Z4)
+
+        QX = mod_p(mod_p(M * M) - mod_p(S + S))
+        Y2 = mod_p(QY * QY)
+        QZ = mod_p(2 * QY * QZ)
+        Y4 = mod_p(Y2 * Y2)
+        QY = mod_p(mod_p(M * (S - QX)) - mod_p(8 * Y4))
+
+        f_np = (np >> i) & 1
+        f_nm = (nm >> i) & 1
+
+        py = PY
+        if f_nm:
+            py = p - PY
+
+        f_np_or_nm = f_nm or f_np
+        if f_np_or_nm:
+            # Q.x, Q.y, Q.z = _add_point(P.x, py, P.z, Q.x, Q.y, Q.z)
+            # inline replace ==>
+            X1 = PX
+            Y1 = py
+            Z1 = PZ
+            X2 = QX
+            Y2 = QY
+            Z2 = QZ
+
+            if Z1 == 0:
+                QX = X2
+                QY = Y2
+                QZ = Z2
+
+            elif Z2 == 0:
+                QX = X1
+                QY = Y1
+                QZ = Z1
+
+            elif X1 == X2 and Y1 == Y2 and Z1 == Z2:
+                QX, QY, QZ = _double_point(X1, Y1, Z1)
+
+            else:
+                Z1Z1 = mod_p(Z1 * Z1)
+                Z2Z2 = mod_p(Z2 * Z2)
+                U1 = mod_p(X1 * Z2Z2)
+                U2 = mod_p(X2 * Z1Z1)
+                S1 = mod_p(Y1 * Z2 * Z2Z2)
+                S2 = mod_p(Y2 * Z1 * Z1Z1)
+
+                H = mod_p(U2 - U1)
+                _2H = mod_p(H + H)
+                I = mod_p(_2H * _2H)
+
+                J = mod_p(H * I)
+                r = mod_p(2 * (S2 - S1))
+
+                V = mod_p(U1 * I)
+                _2V = mod_p(V + V)
+                _r2 = mod_p(r * r)
+
+                X3 = mod_p(_r2 - J - _2V)
+                Y3 = mod_p(r * (V - X3) - 2 * mod_p(S1 * J))
+                Z3 = mod_p((mod_p((Z1 + Z2) * (Z1 + Z2)) - Z1Z1 - Z2Z2) * H)
+
+                QX = X3
+                QY = Y3
+                QZ = Z3
+
+    return ProjectiveCoord(QX, QY, QZ)
+
+
+def FPM_test():
+    golden = "sm2_golden.data"
     with open(golden, 'r') as file:
         for line in file:
             line = line.strip()
@@ -295,7 +466,40 @@ def main():
             # print(f"k_point of G (inlined) is: X={kG2.x}, Y={kG2.y}, Z={kG2.z}")
             assert exp_x == kG2.x and exp_y == kG2.y
 
-            print(f'Test case on k={k} succeeded!\n')
+            print(f'Test case on FPM k={k} succeeded!\n')
+
+def PM_test():
+    golden = "sm2_golden.data"
+    with open(golden, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+            tokens = line.split(',')
+            if len(tokens) != 3:
+                print(f"Warning: Expected 3 tokens, got {len(tokens)} in line: {line}")
+                continue
+            k_str, var_x_str, var_y_str = tokens
+            k = int(k_str.strip())
+            exp_x = int(var_x_str.strip())
+            exp_y = int(var_y_str.strip())
+
+            # Test k point
+            kG = k_point(k, G)
+            kG = to_affine(kG.x, kG.y, kG.z)
+            # print(f"k_point of G is: X={kG.x}, Y={kG.y}, Z={kG.z}")
+            assert exp_x == kG.x and exp_y == kG.y
+
+            kG2 = k_point_inlined(k, G)
+            kG2 = to_affine(kG2.x, kG2.y, kG2.z)
+            # print(f"k_point of G (inlined) is: X={kG2.x}, Y={kG2.y}, Z={kG2.z}")
+            assert exp_x == kG2.x and exp_y == kG2.y
+
+            print(f'Test case on PM k={k} succeeded!\n')
 
 if __name__ == "__main__":
-    main()
+    # 1) fixed k point
+    FPM_test()
+
+    # 2) general k point
+    PM_test()
