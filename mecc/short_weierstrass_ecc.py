@@ -98,8 +98,12 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         X, Y, Z = point.X, point.Y, point.Z
 
         # Using the Jacobian coordinates curve equation: Y^2 = X^3 + aXZ^4 + bZ^6
-        Y2, X3 = Y ** 2, X ** 3
-        Z2 = Z ** 2
+        # Y2, X3 = Y ** 2, X ** 3
+        Y2 = Y * Y
+        X2 = X * X
+        X3 = X2 * X
+
+        Z2 = Z * Z
         Z4 = Z2 * Z2
         Z6 = Z4 * Z2
 
