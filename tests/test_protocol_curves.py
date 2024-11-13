@@ -264,12 +264,16 @@ class TestNISTCurves(unittest.TestCase):
         num_examples = SLOW_SETTINGS.get("max_examples", 10)
         ks = [random.getrandbits(random.randint(1, MOD.bit_length() - 1)) for _ in range(num_examples)]
         ks = [k if k < MOD else k % MOD for k in ks]  # Ensure k is within the modulus range
-        with open("../examples/sm2_golden.data", "a") as file:  # Open the file in append mode
+        with open("../examples/sm2_fpm_golden.data", "a") as file:  # Open the file in append mode
             for k in ks:
                 exp = k * SAGE_SM2_G
                 exp = (int(exp[0]), int(exp[1]), int(exp[2]))
 
                 act = SM2_c.k_point_fixed_256(k, w=4, P=SM2_G)
+                # Write the values of k, int(exp[0]), int(exp[1]) into the file
+                file.write(f"{k}, {act.X.value}, {act.Y.value}, {act.Z.value}\n")
+
+                # Validation
                 act.to_affine()
                 act = act.get_integer_coords()
 
@@ -279,8 +283,32 @@ class TestNISTCurves(unittest.TestCase):
                 self.assertEqual(exp, act, f'Scalar multiplication on Curve: {SM2_c} fails at k={k}')
 
                 print(f'Test case on k={k} succeed!')
+
+    @settings(**SLOW_SETTINGS)
+    def test_SM2_k_point(self):
+
+        num_examples = SLOW_SETTINGS.get("max_examples", 10)
+        ks = [random.getrandbits(random.randint(1, MOD.bit_length() - 1)) for _ in range(num_examples)]
+        ks = [k if k < MOD else k % MOD for k in ks]  # Ensure k is within the modulus range
+        with open("../examples/sm2_pm_golden.data", "a") as file:  # Open the file in append mode
+            for k in ks:
+                exp = k * SAGE_SM2_G
+                exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+
+                act = SM2_c.k_point(k, P=SM2_G)
                 # Write the values of k, int(exp[0]), int(exp[1]) into the file
-                file.write(f"{k}, {exp[0]}, {exp[1]}\n")
+                file.write(f"{k}, {act.X.value}, {act.Y.value}, {act.Z.value}\n")
+
+                # Validation
+                act.to_affine()
+                act = act.get_integer_coords()
+
+                if exp[2] == 0 and act[2] == 0:
+                    continue
+
+                self.assertEqual(exp, act, f'Scalar multiplication on Curve: {SM2_c} fails at k={k}')
+
+                print(f'Test case on k={k} succeed!')
 
 if __name__ == "__main__":
     unittest.main()
