@@ -299,24 +299,52 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         return self._double(X, Y, Z)
 
     def _double(self, X1: GFElementType, Y1: GFElementType, Z1: GFElementType) -> JacobianCoord:
-        # http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-dbl-1998-cmo-2
-
+        #region version(2) http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-dbl-1998-cmo-2
         XX = X1 * X1
         YY = Y1 * Y1
         ZZ = Z1 * Z1
 
-        S = fe_const_scala(4, X1 * YY)
+        t0 =  X1 * YY
+        S = fe_const_scala(4, t0)
 
-        ZZZZ = ZZ * ZZ
-        M = fe_const_scala(3, XX) + self._a * ZZZZ
+        t1 = ZZ * ZZ
+        t2 = self._a * t1
+        t3 = fe_const_scala(3, XX)
+        M = t3 + t2
 
-        MM = M * M
-        T = MM - fe_double(S)
+        t4 = M * M
+        t5 = fe_double(S)
+        T = t4 - t5
 
         X3 = T
-        YYYY = YY * YY
-        Y3 = M * (S - T) - fe_const_scala(8, YYYY)
-        Z3 = fe_double(Y1 * Z1)
+        t6 = S - T
+        t7 = YY * YY
+        t8 = fe_const_scala(8, t7)
+        t9 = M * t6
+        Y3 = t9 - t8
+        t10 = Y1 * Z1
+        Z3 = fe_double(t10)
+
+        #endregion
+
+        #region: version(1) http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#doubling-dbl-2007-bl
+        # XX = X1 * X1
+        # YY = Y1 * Y1
+        # ZZ = Z1 * Z1
+        #
+        # S = fe_const_scala(4, X1 * YY)
+        #
+        # ZZZZ = ZZ * ZZ
+        # M = fe_const_scala(3, XX) + self._a * ZZZZ
+        #
+        # MM = M * M
+        # T = MM - fe_double(S)
+        #
+        # X3 = T
+        # YYYY = YY * YY
+        # Y3 = M * (S - T) - fe_const_scala(8, YYYY)
+        # Z3 = fe_double(Y1 * Z1)
+        #endregion
 
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 
