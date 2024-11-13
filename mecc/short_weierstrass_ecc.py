@@ -217,40 +217,63 @@ class ShortWeierstrassCurve(EllipticCurve, ABC):
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 
     def _add_with_z_ne(self, X1, Y1, Z1, X2, Y2, Z2):
+        #region: version(1) after: http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-add-2007-bl
+        # # Z1Z1 = Z1 ** 2  # 1S
+        # Z1Z1 = Z1 * Z1
+        #
+        # # Z2Z2 = Z2 ** 2  # 2S
+        # Z2Z2 = Z2 * Z2  # 2S
+        #
+        # U1 = X1 * Z2Z2  # 1M
+        # U2 = X2 * Z1Z1  # 2M
+        # S1 = Y1 * Z2 * Z2Z2  # 4M
+        # S2 = Y2 * Z1 * Z1Z1  # 6M
+        # H = U2 - U1
+        #
+        # # I = fe_double(H) ** 2  # 1*2, 3S
+        # _2H = fe_double(H)
+        # I = _2H * _2H  # 1*2, 3S
+        #
+        # J = H * I  # 7M
+        # r = fe_double(S2 - S1)  # 2*2
+        #
+        # # IMPORTANT NOTE:
+        # # This add_point formula can't be use for adding two same point (doubling),
+        # # as H will be Zero that cause incorrect result!!
+        # # ~~ H == r == 0 indicates a point double ~~
+        # V = U1 * I  # 8M
+        #
+        # rr = r * r
+        # X3 = rr - J - fe_double(V)  # 4S, 3*2
+        # Y3 = r * (V - X3) - fe_double(S1 * J)  # 10M, 4*2
+        #
+        # Z1_Z2 = Z1 + Z2
+        # _Z1_Z2_2 = Z1_Z2 * Z1_Z2
+        # # Z3 = ((Z1 + Z2) ** 2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
+        # Z3 = (_Z1_Z2_2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
+        #endregion
 
-        # Z1Z1 = Z1 ** 2  # 1S
+        #region: version(2) after: http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian.html#addition-add-1998-cmo-2
         Z1Z1 = Z1 * Z1
+        Z2Z2 = Z2 * Z2
+        U1 = X1 * Z2Z2
+        U2 = X2 * Z1Z1
+        S1 = Y1 * Z2 * Z2Z2
+        S2 = Y2 * Z1 * Z1Z1
 
-        # Z2Z2 = Z2 ** 2  # 2S
-        Z2Z2 = Z2 * Z2  # 2S
-
-        U1 = X1 * Z2Z2  # 1M
-        U2 = X2 * Z1Z1  # 2M
-        S1 = Y1 * Z2 * Z2Z2  # 4M
-        S2 = Y2 * Z1 * Z1Z1  # 6M
         H = U2 - U1
-
-        # I = fe_double(H) ** 2  # 1*2, 3S
-        _2H = fe_double(H)
-        I = _2H * _2H  # 1*2, 3S
-
-        J = H * I  # 7M
-        r = fe_double(S2 - S1)  # 2*2
-
-        # IMPORTANT NOTE:
-        # This add_point formula can't be use for adding two same point (doubling),
-        # as H will be Zero that cause incorrect result!!
-        # ~~ H == r == 0 indicates a point double ~~
-        V = U1 * I  # 8M
+        HH = H * H
+        HHH = H * HH
+        r = S2 - S1
+        V = U1 * HH
 
         rr = r * r
-        X3 = rr - J - fe_double(V)  # 4S, 3*2
-        Y3 = r * (V - X3) - fe_double(S1 * J)  # 10M, 4*2
+        _2V = fe_double(V)
 
-        Z1_Z2 = Z1 + Z2
-        _Z1_Z2_2 = Z1_Z2 * Z1_Z2
-        # Z3 = ((Z1 + Z2) ** 2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
-        Z3 = (_Z1_Z2_2 - Z1Z1 - Z2Z2) * H  # 11M, 5S, 4*2
+        X3 = rr - HHH - _2V
+        Y3 = r * (V - X3) - S1 * HHH
+        Z3 = Z1 * Z2 * H
+        #endregion
 
         return JacobianCoord.copy(X3, Y3, Z3, self.domain)
 

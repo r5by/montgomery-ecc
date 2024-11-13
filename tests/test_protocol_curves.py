@@ -141,12 +141,12 @@ class TestNISTCurves(unittest.TestCase):
                 file.write(f"{Q_SM2.X.value}, {Q_SM2.Y.value}, {Q_SM2.Z.value};") # record Q
 
                 # Add points using SM2 implementation
-                R_act = SM2_c.add_points(P_SM2, Q_SM2)
-                R_act.to_affine()
+                R_act = SM2_c.add_points(P_SM2, Q_SM2) # keep original result point for easy asm validation
                 file.write(f"{R_act.X.value}, {R_act.Y.value}, {R_act.Z.value}\n") # record P+Q (affine)
-                R_act_coords = R_act.get_integer_coords()
 
                 # Validate results.
+                R_act.to_affine()  # to_affine() for verification
+                R_act_coords = R_act.get_integer_coords()
                 if R_exp_coords[2] == 0 and R_act_coords[2] == 0: # INF
                     continue
 
