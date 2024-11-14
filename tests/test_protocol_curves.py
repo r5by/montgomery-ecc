@@ -4,7 +4,9 @@ import json
 import unittest
 import random
 from mecc.coordinate import PointAtInfinity, JacobianCoord
-from nist_curves import F_256, SAGE_F256, p256, SAGE_p256, G256, SAGE_G256, G256_affine
+from nist_curves import F_256, p256, SAGE_p256, G256, SAGE_G256, G256_affine
+from nist_curves import F_521, p521, SAGE_p521, G521, SAGE_G521, G521_affine
+
 from sm2_curve import  SAGE_SM2_G, SM2_G, SM2_F, SM2_c, MOD
 
 import hypothesis.strategies as st
@@ -75,7 +77,7 @@ class TestNISTCurves(unittest.TestCase):
             min_value=1, max_value=int(F_256.modulus - 1)
         )
     )
-    def test_nist_salar_mul_fixed_win(self, k):
+    def test_nist_p256_salar_mul_fixed_win(self, k):
 
         exp = k * SAGE_G256
         exp = (int(exp[0]), int(exp[1]), int(exp[2]))
@@ -91,6 +93,32 @@ class TestNISTCurves(unittest.TestCase):
         # print(f'{i}-th test success: k={k}')
         self.assertEqual(exp, act1, f'Scalar multiplication on Curve: {p256} fails at k={k}')
         self.assertEqual(exp, act2, f'Scalar multiplication on Curve: {p256} fails at k={k}')
+
+    @settings(**SLOW_SETTINGS)
+    @given(
+        st.integers(
+            min_value=1, max_value=int(F_521.modulus - 1)
+        )
+    )
+    def test_nist_p521_salar_mul_fixed_win(self, k):
+
+        # print(f'Testing k-point of NIST p-521 curve on k={k}')
+        exp = k * SAGE_G521
+        exp = (int(exp[0]), int(exp[1]), int(exp[2]))
+
+        act1 = p521.k_point_fixed_win_naf(k, w=3, P=G521)  # 1) NAF
+        act1.to_affine()
+        act1 = act1.get_integer_coords()
+
+        act2 = p521.k_point_fixed_win(k, w=5, P=G521)  # 2) windowing
+        act2.to_affine()
+        act2 = act2.get_integer_coords()
+
+        # print(f'{i}-th test success: k={k}')
+        self.assertEqual(exp, act1, f'Scalar multiplication on Curve: {p521} fails at k={k}')
+        self.assertEqual(exp, act2, f'Scalar multiplication on Curve: {p521} fails at k={k}')
+
+        # print(f'Succeeded!')
 
     @settings(**SLOW_SETTINGS)
     def test_nist_salar_mul_fixed_comb(self):

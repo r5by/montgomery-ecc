@@ -29,9 +29,74 @@ from tests.sage_helper import CustomSageTwistedEdwardsCurve
 #
 # assert exp == act, f'Scalar multiplication on Curve: {p256} fails at k={k}'
 
+# curve parameters are taken from:
+# https://github.com/ijrsvt/python-ecdsa/blob/master/src/ecdsa/ecdsa.py
 def remove_whitespace(text):
     """Removes all whitespace from passed in string"""
     return re.sub(r"\s+", "", text, flags=re.UNICODE)
+
+#region NIST Curve P-521:
+_p = int(
+    "686479766013060971498190079908139321726943530014330540939"
+    "446345918554318339765605212255964066145455497729631139148"
+    "0858037121987999716643812574028291115057151"
+)
+_r = int(
+    "686479766013060971498190079908139321726943530014330540939"
+    "446345918554318339765539424505774633321719753296399637136"
+    "3321113864768612440380340372808892707005449"
+)
+# s = 0xd09e8800291cb85396cc6717393284aaa0da64baL
+# c = int(remove_whitespace(
+#    """
+#         0b4 8bfa5f42 0a349495 39d2bdfc 264eeeeb 077688e4
+#    4fbf0ad8 f6d0edb3 7bd6b533 28100051 8e19f1b9 ffbe0fe9
+#    ed8a3c22 00b8f875 e523868c 70c1e5bf 55bad637"""
+# ), 16)
+_b = int(
+    remove_whitespace(
+        """
+         051 953EB961 8E1C9A1F 929A21A0 B68540EE A2DA725B
+    99B315F3 B8B48991 8EF109E1 56193951 EC7E937B 1652C0BD
+    3BB1BF07 3573DF88 3D2C34F1 EF451FD4 6B503F00"""
+    ),
+    16,
+)
+_Gx = int(
+    remove_whitespace(
+        """
+          C6 858E06B7 0404E9CD 9E3ECB66 2395B442 9C648139
+    053FB521 F828AF60 6B4D3DBA A14B5E77 EFE75928 FE1DC127
+    A2FFA8DE 3348B3C1 856A429B F97E7E31 C2E5BD66"""
+    ),
+    16,
+)
+_Gy = int(
+    remove_whitespace(
+        """
+         118 39296A78 9A3BC004 5C8A5FB4 2C7D1BD9 98F54449
+    579B4468 17AFBD17 273E662C 97EE7299 5EF42640 C550B901
+    3FAD0761 353C7086 A272C240 88BE9476 9FD16650"""
+    ),
+    16,
+)
+
+SAGE_F521 = GF(_p)
+SAGE_p521 = EllipticCurve(SAGE_F521, [-3, _b])
+SAGE_G521 = SAGE_p521(_Gx, _Gy)
+
+from mont.montgomery import Montgomery
+USE_MONT = True # toggle this to enable/disable montgomery
+
+M8 = Montgomery.factory(mod=_p, mul_opt='real8').build(m=64, w=256)
+M8 = M8.config(mul_opt='real0')
+F_521 = M8 if USE_MONT else GFmodp(_p)
+F_521.modulus = _p
+
+p521 = ShortWeierstrassCurve(domain=F_521, a=-3, b=_b)
+G521_affine = [_Gx, _Gy]
+G521 = JacobianCoord.from_affine(G521_affine, F_521)
+#endregion
 
 #region NIST Curve P-256:
 _p = int(
